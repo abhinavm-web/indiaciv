@@ -74,6 +74,7 @@ are tagged "projection".
 | [Census 2011 Table A-02](https://censusindia.gov.in/nada/index.php/catalog/43333) (ORGI) | Growth 2001-2011, 1901-2011 series | Catalogue search, xlsx/xls (needs `xlrd` for .xls) |
 | [Global Energy Monitor](https://globalenergymonitor.org/projects/global-oil-gas-extraction-tracker/) Global Oil and Gas Extraction Tracker | Oil and gas blocks with a known location | CC BY 4.0; data file behind GEM's public map (August 2023) |
 | [Technical Group on Population Projections](https://nhm.gov.in/New_Updates_2018/Report_Population_Projection_2019.pdf) (MoHFW) | State projections to 2036; basis of the derived district estimate | Table 11 read with `pdftotext` |
+| State Directorates of Economics and Statistics: [Maharashtra](https://mls.org.in/PDF2026/budjet/ESM_25_26_Eng%20Book.pdf), [Tamil Nadu](https://des.tn.gov.in/sites/default/files/2025-07/34.%20STATE%20INCOME.pdf), [Uttarakhand](https://des.uk.gov.in/district-domestic-product-estimates/), [Telangana](https://des.telangana.gov.in/publications/TS%20Economy%20PE2023-24.pdf) | District GDP, each state's own estimate (not comparable across states) | Tables read from each publication |
 | [SHRUG v2.2](https://www.devdatalab.org/shrug_download/) (Development Data Lab) | Economic Census 2013 jobs (cities, districts, states), SECC consumption estimate (cities), PM2.5 (districts) | **CC BY-NC-SA 4.0**; signed download links fetched fresh each run |
 | [NITI Aayog National MPI 2023](https://www.niti.gov.in/sites/default/files/2023-08/India-National-Multidimentional-Poverty-Index-2023.pdf) | District poverty (multidimensional headcount, 2019-21) | District tables read from the PDF (needs `pymupdf` at fetch) |
 | [Census 2011 Table A-04](https://censusindia.gov.in/nada/index.php/catalog/42876) (ORGI) | City growth 2001-2011, 1901-2011 series | Catalogue search, six xlsx tables by size class |
@@ -94,7 +95,8 @@ are tagged "projection".
 
 See the Almanac's *Pending data* page for the live list. The main gaps:
 
-- District and city GDP; population after 2011 (the next census has not published results); growth for
+- City GDP; district GDP outside Maharashtra, Tamil Nadu, Uttarakhand and Telangana (other states publish it, but
+  each in its own format, and many state sites cannot be reached from the build machine); population after 2011 (the next census has not published results); growth for
   districts carved from split 2011 districts, and for Andhra Pradesh, Telangana and Jammu and Kashmir.
 - City-level jobs, incomes and rents (usaciv's City View and Advisors are off until Indian sources are wired in).
 - Economic Census jobs for cities whose SHRUG urban area does not match the census city (shared with a neighbour, or

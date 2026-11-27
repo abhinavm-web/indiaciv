@@ -28,7 +28,7 @@ from ..core.store import load_interim, save_interim, write_web
 from .labels import label_anchor
 from .yields import HEX_AREA_KM2, YIELD_KEYS, YIELDS
 
-REQUIRES = ["_world", "_population", "_nfhs", "india_boundaries", "census2011", "census_a02", "census_a04", "pop_projections", "shrug", "rbi_states", "geonames",
+REQUIRES = ["_world", "_population", "_nfhs", "india_boundaries", "census2011", "census_a02", "census_a04", "pop_projections", "shrug", "state_ddp", "rbi_states", "geonames",
             "wikidata_sites", "wri_power_plants"]
 PRODUCES = ["cities.json", "states.json", "nation.json", "counties.json", "_economy", "_pending"]
 
@@ -264,6 +264,7 @@ def build() -> None:
     a04 = load_interim("census_a04")["units"]
     proj_series = load_interim("pop_projections")["series"]
     shrug = load_interim("shrug")
+    ddp = load_interim("state_ddp")["states"]
     SECTOR_LABEL = {x["key"]: x["label"] for x in shrug["sectors"]}
     nfhs = load_interim("_nfhs")
     nfhs_keys = list(nfhs["keys"])
@@ -322,6 +323,47 @@ def build() -> None:
                         "national": round(nat_sectors[k] / nat_emp, 4) if nat_emp else None, "format": "pct",
                         "higher_is": None, "year": "2013", "source": src + " (share of its establishment jobs)"})
         return out
+
+    # District GDP where the state publishes it (state DES): matched to today's districts of that state by name
+    # (exact, contained, a spelling variant within two letters, or a known renaming). A figure the state publishes
+    # for two of today's districts together is not split: both are Pending.
+    from .nfhs import norm as dnorm, score as dscore
+    DDP_RENAMED = {"Ahilyanagar": "Ahmadnagar", "Kumuram Bheem": "Komarram Bheem", "Jayashankar": "Jayashankar "
+                   "Bhupalpalli", "Trichirappalli": "Tiruchirappalli", "Wanaparthy": "Wanparti"}
+    DDP_ALSO = {"Mumbai": "Mumbai Suburban", "Thane": "Palghar"}  # published together with these
+    ddp_of, ddp_combined, ddp_joint = {}, {}, {}
+    for fips, st in ddp.items():
+        gs = [c["geoid"] for c in bounds["counties"] if c["state_fips"] == fips]
+        nm = {g: popd["name_fix"].get(g, cmeta[g]["name"]) for g in gs}
+        pairs = []
+        for i, dd in enumerate(st["districts"]):
+            for a in {dnorm(dd["name"]), dnorm(DDP_RENAMED.get(dd["name"], ""))} - {""}:
+                for g in gs:
+                    sc = dscore(a, dnorm(nm[g]))
+                    if sc is not None:
+                        pairs.append((sc, i, g))
+        used_i, used_g = set(), set()
+        for sc, i, g in sorted(pairs):
+            if i in used_i or g in used_g:
+                continue
+            used_i.add(i)
+            used_g.add(g)
+            dd = st["districts"][i]
+            if dd["note"]:
+                ddp_combined[g] = dd["note"]
+                ddp_joint[g] = {"value": dd["value"], "measure": st["measure"], "year": st["year"], "label":
+                                dd["note"], "source": f"{st['publisher']}: {st['title']}"}
+                also = next((h for h in gs if dnorm(nm[h]) == dnorm(DDP_ALSO.get(dd["name"], "-"))), None)
+                if also:
+                    ddp_combined[also] = dd["note"]
+                    ddp_joint[also] = ddp_joint[g]
+                continue
+            ddp_of[g] = {"value": dd["value"], "measure": st["measure"], "year": st["year"],
+                         "source": f"{st['publisher']}: {st['title']}"}
+        for i, dd in enumerate(st["districts"]):
+            if i not in used_i:
+                pending["district_gdp_unmatched"].append({"what": f"{dd['name']} ({st['name']})",
+                                                          "why": "no district of that name on today's map"})
 
     # Growth 2001-2011 and the 1901-2011 series, exact only where an area is made of whole 2011 districts:
     # dest[2011 district] = today's districts its sub-districts went to.
@@ -408,6 +450,13 @@ def build() -> None:
         if not exact and pop:
             pending["district_growth"].append({"district": name, "state": smeta[m["state_fips"]]["name"],
                                                "why": "its 2011 sub-districts came from a split 2011 district"})
+        if pop and g not in ddp_of:
+            pending["district_gdp"].append({"district": name, "state": smeta[m["state_fips"]]["name"],
+                                            "why": ddp_combined.get(g) and "the state publishes it only for "
+                                            f"{ddp_combined[g]}" or ("not matched to the state's published "
+                                            "list" if m["state_fips"] in ddp else "its state's District Domestic "
+                                            "Product is not wired in (not published, or not readable from the "
+                                            "build machine)")})
         if pop and g in ec_dist and ec_unreliable(g):
             pending["district_jobs"].append({"district": name, "state": smeta[m["state_fips"]]["name"],
                                              "why": "SHRUG did not place the Economic Census jobs of its 2011 "
@@ -430,7 +479,9 @@ def build() -> None:
             "ec13_per100": round(ec_dist[g]["emp"] / pop * 100, 1) if g in ec_dist and pop and not ec_unreliable(g)
             else None,
             "pm25": pm25_dist.get(g),
-            "gdp": None,
+            "gdp": round(ddp_of[g]["value"]) if g in ddp_of else None,
+            "gdp_measure": ddp_of[g]["measure"] if g in ddp_of else None,
+            "gdp_year": ddp_of[g]["year"] if g in ddp_of else None,
             "land": {kk: (round(sum(pct[kk][c] for c in land_cells) / len(land_cells) / 100, 4) if land_cells else None)
                      for kk in PCT_KEYS},
             "cells": cells, "cell": cells[len(cells) // 2] if cells else rep,
@@ -759,6 +810,19 @@ def build() -> None:
             "households": rec.get("No_HH"), "literacy": literacy(rec),
             "yields": {**ys, "food": farm(rec), "gold": None},
             "facts": {"People · Census 2011": people_facts(rec, nat_rec),
+                      **({"Its district · GDP (state's own estimate)": [{
+                          "key": "district_gdp", "label": f"{county_by_geoid[geoids[k]]['name']} district, "
+                          f"{ddp_of[geoids[k]]['measure']}", "value": ddp_of[geoids[k]]["value"], "national": None,
+                          "format": "inr", "higher_is": None, "year": ddp_of[geoids[k]]["year"],
+                          "source": ddp_of[geoids[k]]["source"] + " (current prices; not comparable across states)"}]}
+                         if k >= 0 and geoids[k] in ddp_of else
+                         {"Its district · GDP (state's own estimate)": [{
+                             "key": "district_gdp", "label": f"{ddp_joint[geoids[k]]['label']}, "
+                             f"{ddp_joint[geoids[k]]['measure']}", "value": ddp_joint[geoids[k]]["value"],
+                             "national": None, "format": "inr", "higher_is": None,
+                             "year": ddp_joint[geoids[k]]["year"], "source": ddp_joint[geoids[k]]["source"] +
+                             " (published for the two districts together; current prices)"}]}
+                         if k >= 0 and geoids[k] in ddp_joint else {}),
                       **({f"Its district · population {EST_YEAR}": [{
                           "key": "district_pop_est", "label": f"{county_by_geoid[geoids[k]]['name']} district, "
                           f"1 July {EST_YEAR}", "value": county_by_geoid[geoids[k]]["pop_est"], "national": None,
@@ -996,8 +1060,12 @@ def build() -> None:
          "Cultivators and agricultural labourers ÷ all workers, 2011."),
         ("parent_2011", "2011 district", "text", None, "neutral", "census2011",
          "The 2011 census district that most of today's district's people lived in."),
-        ("gdp", "GDP", "inr", "₹", "good", "rbi_states",
-         "Pending: India publishes no comparable district GDP series."),
+        ("gdp", "GDP (state's own estimate)", "inr", "₹", "good", "state_ddp",
+         "District Domestic Product as published by the state's Directorate of Economics and Statistics, at current "
+         "prices (gross, or net for Tamil Nadu; the year is in gdp_year). Methods differ by state: not comparable "
+         "across states. Blank where the state's figures are not wired in."),
+        ("gdp_year", "GDP year", "text", None, "neutral", "state_ddp", "The year of the district GDP figure."),
+        ("gdp_measure", "GDP measure", "text", None, "neutral", "state_ddp", "Gross or Net District Domestic Product."),
         ("pop_est", f"Population {EST_YEAR} (derived estimate)", "int", None, "neutral", "pop_projections",
          EST_METHOD),
         ("ec13_emp", "Jobs in establishments (2013)", "int", None, "neutral", "shrug",
@@ -1033,7 +1101,8 @@ def build() -> None:
     }
 
     pending["always"] = [
-        {"what": "District and city GDP", "why": "no comparable official series is published"},
+        {"what": "City GDP, and a district GDP series comparable across states",
+         "why": "not published (states compile District Domestic Product each by its own method)"},
         {"what": "Population after 2011", "why": "the next census has not published results"},
         {"what": "Oil and gas fields below GEM's size threshold (1 million barrels of oil equivalent a year, or "
                  "25 million in reserve)", "why": "no open, systematic field list with coordinates found yet"},

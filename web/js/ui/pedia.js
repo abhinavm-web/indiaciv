@@ -60,7 +60,9 @@ export function initPedia(data) {
     "Pending data": () => {
       const pend = data.nation.pending || {};
       const label = { always: "Not published anywhere yet", state_gdp: "State GDP", districts: "Districts without census figures",
-        cities: "Cities not placed", state_capitals: "Capitals not marked", sources: "Sources that did not answer" };
+        cities: "Cities not placed", state_capitals: "Capitals not marked", sources: "Sources that did not answer",
+        city_growth: "City growth 2001–2011", district_growth: "District growth 2001–2011", state_growth: "State growth 2001–2011",
+        district_nfhs: "Districts without NFHS-5 figures", boundaries: "Boundaries" };
       const line = (x) => esc(Object.entries(x).filter(([k]) => k !== "why").map(([, v]) => v).join(" · ") + (x.why ? ` — ${x.why}` : ""));
       return `
       ${h2("pedia", "📖", "Pending data")}

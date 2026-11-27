@@ -48,10 +48,13 @@ has been found, the value is `null` (shown as "–") and listed on the Almanac's
   copies; state and India sheets from the DHS Program's official compendiums). Matched to today's districts by name,
   spelling variant or 2011 name; districts created after 2017 are Pending.
 - **Growth 2001-2011** from Census Table A-02 (with the 1901-2011 series): exact for the nation, states and today's
-  districts made of whole 2011 districts; Pending where a 2011 district was split.
+  districts made of whole 2011 districts; Pending where a 2011 district was split. Cities from Census Table A-04
+  (each town and agglomeration at every census since 1901, on its boundaries at that census), matched by the exact
+  2011 population; cities that were not census towns in 2001 are Pending.
 - **Lenses.** Population density, growth, urban share, literacy, life expectancy, farm-worker share, poverty, urban
   unemployment, income per person, earthquakes since 1900 (USGS), forest, farmland, built-up land.
-- **Resources and wonders.** Coal, gas, oil, hydro, wind, solar and biomass power plants (WRI); World Heritage sites,
+- **Resources and wonders.** Coal, gas, oil, hydro, wind, solar and biomass power plants (WRI); operating coal and
+  iron ore mines (Global Energy Monitor); World Heritage sites,
   national parks and universities (Wikidata); Natural Earth roads, rail and ports; OurAirports airports with
   scheduled service.
 
@@ -62,6 +65,7 @@ has been found, the value is `null` (shown as "–") and listed on the Almanac's
 | [Census of India 2011, Primary Census Abstract](https://censusindia.gov.in/nada/index.php/catalog/42559) (ORGI) | Population, households, literacy, workers, cities | Download (xlsx) |
 | [PCA Urban Agglomerations 2011](https://censusindia.gov.in/nada/index.php/catalog/45261) (ORGI) | Cities | Download (xlsx) |
 | [Census 2011 Table A-02](https://censusindia.gov.in/nada/index.php/catalog/43333) (ORGI) | Growth 2001-2011, 1901-2011 series | Catalogue search, xlsx/xls (needs `xlrd` for .xls) |
+| [Census 2011 Table A-04](https://censusindia.gov.in/nada/index.php/catalog/42876) (ORGI) | City growth 2001-2011, 1901-2011 series | Catalogue search, six xlsx tables by size class |
 | [INDIAN-SHAPEFILES](https://github.com/datta07/INDIAN-SHAPEFILES) (MIT) | States, districts, 2011 sub-districts | Download, pinned commit |
 | [RBI Handbook of Statistics on Indian States](https://www.rbi.org.in/Scripts/AnnualPublications.aspx?head=Handbook+of+Statistics+on+Indian+States) | State GDP, value added by sector, per-capita NSDP, unemployment, poverty, life expectancy, infant mortality, SDG score, forest, tourism, power | 16 tables found on the page, xlsx |
 | [NFHS-5 fact sheets](https://rchiips.org/nfhs/districtfactsheet_NFHS-5.shtml) (IIPS, MoHFW) | District, state and India health & housing indicators | District PDFs from a pinned mirror, verified against [DHS Program](https://www.dhsprogram.com/) copies; state & India compendiums from DHS (needs `pdftotext`) |
@@ -79,7 +83,7 @@ has been found, the value is `null` (shown as "–") and listed on the Almanac's
 
 See the Almanac's *Pending data* page for the live list. The main gaps:
 
-- District and city GDP; population after 2011 (the next census has not published results); growth for cities, for
+- District and city GDP; population after 2011 (the next census has not published results); growth for
   districts carved from split 2011 districts, and for Andhra Pradesh, Telangana and Jammu and Kashmir.
 - City-level jobs, incomes and rents (usaciv's City View and Advisors are off until Indian sources are wired in).
 - Oil and gas fields, and mines other than coal and iron ore.

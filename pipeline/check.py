@@ -56,7 +56,7 @@ ECON_NUMBERS = ["population", "employed", "median_income", "median_rent", "home_
 # The economic shape shared by a city, a state and nation.json "nation" (gdp_by_industry is optional).
 ECON_KEYS = ["population", "employed", "yields", "jobs", "median_income", "median_rent", "home_value",
              "unemployment", "rent_burden", "gdp", "gdp_year", "growth", "growth_years"]
-GROWTH_MAX = 0.6  # the pipeline nulls |growth| above this over 2006-2016 (see pipeline/build/economy.py)
+GROWTH_MAX = 2.0  # a decade (2001-2011) on unchanged boundaries: Noida grew 109%
 CITY_RANK_BASE = ["population", "gdp", "gdp_per_capita", "growth"]
 PEERS = 5
 COUNTY_FORMATS = (LENS_FORMATS - {"category"}) | {"text", "km2"}  # categorical county columns are "text"

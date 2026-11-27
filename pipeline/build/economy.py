@@ -10,7 +10,9 @@ no coordinates, so each is matched to a GeoNames populated place of the same nam
 districts that the city's own 2011 district (or, failing that, state) became. Census towns with an acronym for a name (GVMC)
 take the largest GeoNames place inside their own sub-districts. A city with no match is left out and listed as
 pending. Capitals are Wikidata's (P36), matched to the nearest placed city. A city's footprint is its district's hexes when it is the district's largest city (the closest
-match to a US metro area), otherwise its own hex.
+match to a US metro area), otherwise its own hex. A town with an outgrowth is counted with it ("M + OG"), as the
+census does. City growth 2001-2011 is census table A-04's, for the unit with the city's exact 2011 population, where
+the unit's area is the same at both censuses (within 10%); a city whose boundaries were widened is Pending.
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ from ..core.store import load_interim, save_interim, write_web
 from .labels import label_anchor
 from .yields import HEX_AREA_KM2, YIELD_KEYS, YIELDS
 
-REQUIRES = ["_world", "_population", "_nfhs", "india_boundaries", "census2011", "census_a02", "rbi_states", "geonames",
+REQUIRES = ["_world", "_population", "_nfhs", "india_boundaries", "census2011", "census_a02", "census_a04", "rbi_states", "geonames",
             "wikidata_sites", "wri_power_plants"]
 PRODUCES = ["cities.json", "states.json", "nation.json", "counties.json", "_economy", "_pending"]
 
@@ -243,6 +245,7 @@ def build() -> None:
     cmeta = {c["geoid"]: c for c in bounds["counties"]}
     pending = defaultdict(list)
     a02 = load_interim("census_a02")["series"]
+    a04 = load_interim("census_a04")["units"]
     nfhs = load_interim("_nfhs")
     nfhs_keys = list(nfhs["keys"])
     # Growth 2001-2011 and the 1901-2011 series, exact only where an area is made of whole 2011 districts:
@@ -551,8 +554,14 @@ def build() -> None:
         raw.append({"small": (u["TOT_P"] or 0) < MIN_CITY_POP, "id": f"UA{u['st']}-{u['ua']}", "name": short, "census_name": u["name"], "kind": "urban agglomeration",
                     "rec": u, "names": names, "allowed": allowed, "sub_keys": sub_keys})
     towns = {}
-    for t in census["towns"]:  # a town split across sub-districts comes as several "(Part)" rows: add them up
+    # A town with an outgrowth comes as a "(M + OG)" row (town and outgrowth) next to a "(M)" row (the town alone)
+    # under the same code: use the "+ OG" rows, as the census does for the town's own urban agglomeration. A town
+    # split across sub-districts comes as several "(Part)" rows: add them up.
+    with_og = {t["town"] for t in census["towns"] if "+ OG" in t["name"] or "+OG" in t["name"]}
+    for t in census["towns"]:
         if t["town"] in in_ua:
+            continue
+        if t["town"] in with_og and not ("+ OG" in t["name"] or "+OG" in t["name"]):
             continue
         agg = towns.setdefault(t["town"], {"town": t["town"], "st": t["st"], "dt": t["dt"], "name": t["name"],
                                            "keys": set(), **{c: 0 for c in census["columns"]}})
@@ -632,6 +641,44 @@ def build() -> None:
             "ranks": {}, "peers": [],
             "geonames": p["id"], "wikidata": None, "_sub_keys": c["sub_keys"], "_small": c["small"],
         })
+
+    # Growth 2001-2011 (census table A-04): the unit with the city's exact 2011 population, preferring a numbered
+    # (top-level) unit, then one in the city's state, then one whose name contains the city's. Its 2001 figure is the
+    # census's count for that unit at the 2001 census, on the unit's 2001 boundaries, so growth is given only where
+    # the census's own area for the unit changed by AREA_TOLERANCE or less; otherwise it is Pending.
+    AREA_TOLERANCE = 0.10
+    by_pop = defaultdict(list)
+    for u in a04:
+        if u["pop"].get("2011"):
+            by_pop[u["pop"]["2011"]].append(u)
+    for c in cities:
+        cands = by_pop.get(c["population"], [])
+        stname = norm(states[[s["abbr"] for s in states].index(c["states"][0])]["name"])
+        cname = norm(c["name"])
+
+        def score(u):
+            return (u["top"], bool(u["state"]) and norm(u["state"]) == stname, cname in norm(u["name"]))
+        best = sorted(cands, key=score, reverse=True)
+        u = best[0] if best and (len(best) == 1 or score(best[0]) > score(best[1])) else None
+        if u is None:
+            pending["city_growth"].append({"id": c["id"], "name": c["name"], "state": c["states"][0],
+                                           "why": "no unit in census table A-04 with the same 2011 population"
+                                           if not cands else "several A-04 units share its 2011 population"})
+            continue
+        a0, a1 = u["area"].get("2001"), u["area"].get("2011")
+        why = None
+        if not u["pop"].get("2001"):
+            why = "not a census town or agglomeration in 2001"
+        elif not (a0 and a1):
+            why = "census table A-04 gives no area for 2001 and 2011, so the boundaries cannot be compared"
+        elif abs(a1 / a0 - 1) > AREA_TOLERANCE:
+            why = f"boundaries changed between the censuses (area {a0:,.0f} → {a1:,.0f} km²)"
+        if why:
+            pending["city_growth"].append({"id": c["id"], "name": c["name"], "state": c["states"][0], "why": why})
+            continue
+        c["pop_series"] = dict(sorted(u["pop"].items()))
+        c["growth"] = round(u["pop"]["2011"] / u["pop"]["2001"] - 1, 4)
+        c["growth_years"] = [2001, 2011]
 
     # Capitals (Wikidata P36): the placed city nearest the capital's coordinates, within CAPITAL_KM.
     CAPITAL_KM = 25.0
@@ -792,13 +839,13 @@ def build() -> None:
 
     pending["always"] = [
         {"what": "District and city GDP", "why": "no comparable official series is published"},
-        {"what": "City population growth", "why": "the census publishes 2001 figures for towns, not for 2011 "
-                                                   "urban agglomerations as a series; not yet wired in"},
         {"what": "Population after 2011", "why": "the next census has not published results"},
         {"what": "Oil and gas fields", "why": "no open, systematic field list with coordinates found yet"},
         {"what": "Mines other than coal and iron ore (bauxite, limestone, copper, zinc and others)",
          "why": "the Indian Bureau of Mines publishes lease lists by state without coordinates; not yet wired in"},
     ]
+    kept = {c["id"] for c in cities}
+    pending["city_growth"] = [p for p in pending["city_growth"] if p.pop("id") in kept]
     pending["district_nfhs"] = nfhs["pending"]
     pending["boundaries"] = [{"what": "\"Nazul\" (Delhi)", "why": "the boundary file's name for an outline holding the "
                               "2011 sub-districts Sadar Bazar and Gandhi Nagar; not an official district name"}]

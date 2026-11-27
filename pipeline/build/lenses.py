@@ -219,13 +219,12 @@ def build() -> None:
         },
         {
             "id": "poverty", "group": "prosperity", "name": "Poverty", "icon": "l-income", "emoji": "📉",
-            "unit": f"multidimensionally poor ({fact_year('mpi_headcount')})", "format": "pct", "scale": "linear",
+            "unit": "multidimensionally poor (2019-21)", "format": "pct", "scale": "linear",
             "ramp": ["#fff1b0", "#e8c95a", "#c5862a", "#8f4a14", "#5a240a", "#2a0e05"], "higher_is": "bad",
-            "source": "rbi_states",
-            "description": "Share of people who are multidimensionally poor (NITI Aayog's national MPI from NFHS-5, "
-            "as published in the RBI handbook), by state.",
-            "note": "State-wide values: every hex of a state has the same colour.",
-            "values": state_fact("mpi_headcount"),
+            "source": "niti_mpi",
+            "description": "Share of people who are multidimensionally poor, by district: NITI Aayog's National MPI "
+            "(Progress Review 2023), computed from NFHS-5 (2019-21). Blank for districts created after 2017.",
+            "values": nf.get("mpi_poor", [None] * n),
         },
         {
             "id": "unemployment", "group": "prosperity", "name": "Urban unemployment", "icon": "unemployment",

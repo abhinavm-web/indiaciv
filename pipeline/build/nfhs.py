@@ -6,6 +6,9 @@ other (Muktsar / Sri Muktsar Sahib), else a spelling variant within two letters 
 2011 census name of the district's main 2011 district. A district of today gets at most one fact sheet, the closest
 match; districts created after 2017, and any without a confident match, have no NFHS-5 values (Pending). A district
 whose borders changed after 2017 keeps the fact sheet of the 2017 district of its name.
+
+NITI Aayog's district MPI (the same 707 NFHS-5 districts) is matched to today's districts the same way, trying the
+name, the part outside brackets and the part inside them ("Allahabad (Prayagraj)"), and added as one more fact.
 """
 
 from __future__ import annotations
@@ -15,7 +18,7 @@ from collections import defaultdict
 
 from ..core.store import load_interim, save_interim
 
-REQUIRES = ["_world", "_population", "india_boundaries", "nfhs5"]
+REQUIRES = ["_world", "_population", "india_boundaries", "nfhs5", "niti_mpi", "rbi_states"]
 PRODUCES = ["_nfhs"]
 
 # Fact-sheet indicator number -> (key, label, higher_is, label prefix of the India fact sheet row)
@@ -34,6 +37,11 @@ INDICATORS = {
     84: ("anaemia_women", "Women 15-49 who are anaemic", "bad", "All women age 15-49 years who are anaemic"),
 }
 DROP = re.compile(r"\b(district|dist)\b")
+# Official renamings and spellings that the name rules cannot bridge: survey name -> today's boundary-file name.
+RENAMED = {"SPSR Nellore": "Sri Potti Sriramulu Nellore", "Dang": "Dangs", "Sonepur": "Subarnapur",
+           "Kumuram Bheem Asifabad": "Komarram Bheem", "Komaram Bheem Asifabad": "Komarram Bheem",
+           "Wanaparthy": "Wanparti", "Howrah": "Haora", "North 24 Parganas": "North Twenty-four Parganas",
+           "Kamrup Metro": "Kamrup Metropolitan", "Kamrup": "Kamrup Rural"}
 
 
 def norm(s: str) -> str:
@@ -82,7 +90,8 @@ def build() -> None:
     # Candidate pairs (score, sheet, district); then greedy best-first so each side is used once.
     pairs = []
     for i, d in enumerate(nf["districts"]):
-        a = norm(d["title"] or d["file"].replace("_", " "))
+        title = d["title"] or d["file"].replace("_", " ")
+        a = norm(RENAMED.get(title, title))
         for g in by_state.get(d["state"], []):
             s = score(a, norm(names[g]))
             if s is None and parent[g]:
@@ -127,6 +136,51 @@ def build() -> None:
                           "source": f"NFHS-5 district fact sheet: {d['title']}"})
         out[g] = {"sheet": d["title"], "match": ["exact", "contained", "spelling", "2011 name", "2011 name",
                                                   "2011 name"][s], "facts": facts}
+    # NITI Aayog MPI (NFHS-5 districts): headcount ratio, matched like the fact sheets.
+    mpi = load_interim("niti_mpi")["districts"]
+    st_fips = {norm(st["name"]): st["fips"] for st in bounds["states"]}
+    mpi_nat = (load_interim("rbi_states")["tables"].get("mpi", {}).get("IN") or {}).get(
+        "NFHS-5 (2019-21) | Headcount Ratio (Per cent)")
+
+    def variants(name):
+        out = {norm(name), norm(re.sub(r"\(.*?\)", " ", name)), norm(RENAMED.get(name, ""))}
+        out |= {norm(x) for x in re.findall(r"\((.*?)\)", name)}
+        return [v for v in out if v]
+
+    pairs = []
+    for i, r in enumerate(mpi):
+        if r["h_2021"] is None:
+            continue
+        fips = st_fips.get(norm(r["state"]))
+        for g in by_state.get(fips, []):
+            best = None
+            for a in variants(r["district"]):
+                for b, extra in ((norm(names[g]), 0), (norm(parent[g]), 3)):
+                    sc = score(a, b)
+                    if sc is not None and (best is None or sc + extra < best):
+                        best = sc + extra
+            if best is not None:
+                pairs.append((best, i, g))
+    pairs.sort()
+    used_row, used_g2, mpi_out = set(), set(), {}
+    for sc, i, g in pairs:
+        if i in used_row or g in used_g2:
+            continue
+        used_row.add(i)
+        used_g2.add(g)
+        r = mpi[i]
+        mpi_out[g] = r["district"]
+        fact = {"key": "mpi_poor", "label": "Multidimensionally poor (NITI MPI)", "value": round(r["h_2021"], 4),
+                "national": round(mpi_nat / 100, 4) if mpi_nat is not None else None, "format": "pct",
+                "higher_is": "bad", "year": "2019-21",
+                "source": f"NITI Aayog National MPI 2023: {r['district']} ({r['state']})"}
+        if g not in out:
+            out[g] = {"sheet": None, "match": None, "facts": []}
+        out[g]["facts"].append(fact)
+        out[g]["mpi_district"] = r["district"]
+    mpi_unused = [mpi[i]["district"] for i in range(len(mpi)) if mpi[i]["h_2021"] is not None and i not in used_row]
+    mpi_pending = [{"district": names[g], "why": "no NITI MPI district of that name in its state (created after "
+                                                "2017, or renamed)"} for g in geoids if g not in mpi_out]
     unused = [nf["districts"][i]["title"] for i in range(len(nf["districts"])) if i not in used_sheet]
     STATE_NAMES = {"Andaman & Nicobar Islands": "35", "Andhra Pradesh": "28", "Arunachal Pradesh": "12",
                    "Assam": "18", "Bihar": "10", "Chandigarh": "04", "Chhattisgarh": "22",
@@ -152,10 +206,14 @@ def build() -> None:
                           "national": round(nv / 100, 4) if nv is not None else None, "format": "pct",
                           "higher_is": hi, "year": "2019-21", "source": f"NFHS-5 state fact sheet: {sname}"})
         states_out[fips] = facts
+    keys = {v[0]: {"label": v[1], "higher_is": v[2]} for v in INDICATORS.values()}
+    keys["mpi_poor"] = {"label": "Multidimensionally poor (NITI MPI)", "higher_is": "bad"}
     save_interim("_nfhs", {"districts": out, "states": states_out, "pending": pending, "unused_sheets": unused,
-                           "keys": {v[0]: {"label": v[1], "higher_is": v[2]} for v in INDICATORS.values()}})
+                           "mpi_pending": mpi_pending, "mpi_unused": mpi_unused, "keys": keys})
     kinds = defaultdict(int)
     for v in out.values():
-        kinds[v["match"]] += 1
-    print(f"    {len(out)} of {len(geoids)} districts have an NFHS-5 fact sheet {dict(kinds)}; "
+        if v["match"]:
+            kinds[v["match"]] += 1
+    print(f"    {sum(1 for v in out.values() if v['sheet'])} of {len(geoids)} districts have an NFHS-5 fact sheet {dict(kinds)}; "
           f"{len(unused)} sheets unmatched: {unused[:15]}")
+    print(f"    {len(mpi_out)} districts have a NITI MPI value; {len(mpi_unused)} MPI rows unmatched: {mpi_unused[:15]}")

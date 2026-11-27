@@ -630,7 +630,7 @@ def build() -> None:
             "households": rec.get("No_HH"), "literacy": literacy(rec),
             "yields": {**ys, "food": farm(rec), "gold": None},
             "facts": {"People · Census 2011": people_facts(rec, nat_rec),
-                      **({f"Its district ({nfhs['districts'][geoids[k]]['sheet']}) · NFHS-5 2019-21":
+                      **({f"Its district ({nfhs['districts'][geoids[k]]['sheet'] or nfhs['districts'][geoids[k]].get('mpi_district')}) · NFHS-5 2019-21":
                           nfhs["districts"][geoids[k]]["facts"]} if k >= 0 and geoids[k] in nfhs["districts"] else {})},
             "jobs": jobs(rec), "median_income": None, "median_rent": None, "home_value": None,
             "unemployment": None, "rent_burden": None,
@@ -814,7 +814,9 @@ def build() -> None:
          "The 2011 census district that most of today's district's people lived in."),
         ("gdp", "GDP", "inr", "₹", "good", "rbi_states",
          "Pending: India publishes no comparable district GDP series."),
-        *[(k, v["label"], "pct", None, v["higher_is"], "nfhs5",
+        *[(k, v["label"], "pct", None, v["higher_is"], "niti_mpi" if k == "mpi_poor" else "nfhs5",
+           "NITI Aayog National MPI 2023 (from NFHS-5, 2019-21) for the 2017 district of this name; blank where none "
+           "matches." if k == "mpi_poor" else
            "NFHS-5 (2019-21) district fact sheet of the 2017 district of this name; blank where none matches.")
           for k, v in nfhs["keys"].items()],
         ("forest", "Forest", "pct", None, "neutral", "worldcover", "Share of land that is tree cover."),
@@ -847,6 +849,7 @@ def build() -> None:
     kept = {c["id"] for c in cities}
     pending["city_growth"] = [p for p in pending["city_growth"] if p.pop("id") in kept]
     pending["district_nfhs"] = nfhs["pending"]
+    pending["district_mpi"] = nfhs["mpi_pending"]
     pending["boundaries"] = [{"what": "\"Nazul\" (Delhi)", "why": "the boundary file's name for an outline holding the "
                               "2011 sub-districts Sadar Bazar and Gandhi Nagar; not an official district name"}]
     if no_cap:

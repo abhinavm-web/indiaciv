@@ -65,6 +65,7 @@ has been found, the value is `null` (shown as "–") and listed on the Almanac's
 | [Census of India 2011, Primary Census Abstract](https://censusindia.gov.in/nada/index.php/catalog/42559) (ORGI) | Population, households, literacy, workers, cities | Download (xlsx) |
 | [PCA Urban Agglomerations 2011](https://censusindia.gov.in/nada/index.php/catalog/45261) (ORGI) | Cities | Download (xlsx) |
 | [Census 2011 Table A-02](https://censusindia.gov.in/nada/index.php/catalog/43333) (ORGI) | Growth 2001-2011, 1901-2011 series | Catalogue search, xlsx/xls (needs `xlrd` for .xls) |
+| [NITI Aayog National MPI 2023](https://www.niti.gov.in/sites/default/files/2023-08/India-National-Multidimentional-Poverty-Index-2023.pdf) | District poverty (multidimensional headcount, 2019-21) | District tables read from the PDF (needs `pymupdf` at fetch) |
 | [Census 2011 Table A-04](https://censusindia.gov.in/nada/index.php/catalog/42876) (ORGI) | City growth 2001-2011, 1901-2011 series | Catalogue search, six xlsx tables by size class |
 | [INDIAN-SHAPEFILES](https://github.com/datta07/INDIAN-SHAPEFILES) (MIT) | States, districts, 2011 sub-districts | Download, pinned commit |
 | [RBI Handbook of Statistics on Indian States](https://www.rbi.org.in/Scripts/AnnualPublications.aspx?head=Handbook+of+Statistics+on+Indian+States) | State GDP, value added by sector, per-capita NSDP, unemployment, poverty, life expectancy, infant mortality, SDG score, forest, tourism, power | 16 tables found on the page, xlsx |
@@ -93,7 +94,7 @@ See the Almanac's *Pending data* page for the live list. The main gaps:
 ## Running it
 
 ```sh
-uv pip install rasterio numpy xlrd       # only for the WorldCover fetch and the census .xls tables
+uv pip install rasterio numpy xlrd pymupdf   # fetch only: WorldCover, census .xls tables, NITI MPI PDF
 uv run python -m pipeline all            # fetch → process → build → check
 uv run python -m pipeline serve          # http://127.0.0.1:8765
 uv run python -m pipeline package        # indiaciv.zip: the static site, ready to upload

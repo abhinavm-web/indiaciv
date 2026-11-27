@@ -62,7 +62,7 @@ export function initPedia(data) {
       const label = { always: "Not published anywhere yet", state_gdp: "State GDP", districts: "Districts without census figures",
         cities: "Cities not placed", state_capitals: "Capitals not marked", sources: "Sources that did not answer",
         city_growth: "City growth 2001–2011", district_growth: "District growth 2001–2011", state_growth: "State growth 2001–2011",
-        district_nfhs: "Districts without NFHS-5 figures", district_mpi: "Districts without NITI poverty figures", district_pop_est: "Districts without a population estimate", oil_gas: "Oil & gas blocks not placed", city_jobs: "Cities without Economic Census jobs", district_jobs: "Districts without Economic Census jobs", district_gdp: "Districts without GDP", district_gdp_unmatched: "Published district GDP not matched", boundaries: "Boundaries" };
+        district_nfhs: "Districts without NFHS-5 figures", district_mpi: "Districts without NITI poverty figures", district_pop_est: "Districts without a population estimate", oil_gas: "Oil & gas blocks not placed", city_jobs: "Cities without Economic Census jobs", district_jobs: "Districts without Economic Census jobs", district_gdp: "Districts without GDP", district_gdp_unmatched: "Published district GDP not matched", district_rural_income: "Districts without SECC rural incomes", state_rural_income: "States without SECC rural incomes", state_earnings: "States without PLFS earnings or HCES spending", boundaries: "Boundaries" };
       const line = (x) => esc(Object.entries(x).filter(([k]) => k !== "why").map(([, v]) => v).join(" · ") + (x.why ? ` — ${x.why}` : ""));
       return `
       ${h2("pedia", "📖", "Pending data")}

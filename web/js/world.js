@@ -186,6 +186,8 @@ export function applyLens(w, lens, band = null) {
   } else {
     const stops = lens.ramp.map(parseHex);
     const t = lensScale(lens);
+    // A lens whose empty hexes mean "none" (not "unknown") draws them in its own colour, not the no-data grey.
+    const noneRGB = lens.null_color ? parseHex(lens.null_color) : null;
     const { owner } = w.raw;
     for (let i = 0; i < n; i++) {
       const base = w.terrainColors[i];
@@ -195,7 +197,7 @@ export function applyLens(w, lens, band = null) {
       }
       const v = lens.values[i];
       const tv = v == null ? null : t(v);
-      let c = tv == null ? NO_DATA : rampColor(stops, tv);
+      let c = tv == null ? (noneRGB || NO_DATA) : rampColor(stops, tv);
       if (band && (tv == null || tv < band[0] || tv > band[1])) {
         // Out of band: mostly grey, pushed toward a cool slate so it recedes like fog rather than turning muddy.
         c = mix(desaturate(c, 0.92), DIM_RGB, 0.66);

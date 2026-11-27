@@ -95,14 +95,17 @@ def build() -> None:
         return out
 
     density = spread(density_c, False)
-    nf = {k: spread(v, True) for k, v in eco.get("county_nfhs", {}).items()}
+    # Survey lenses are drawn on the districts as surveyed (2019-21): a district created since takes the value of the
+    # district it was part of, which is what the survey measured for that ground.
+    nf = {k: spread(v, True) for k, v in (eco.get("county_nfhs_map") or eco.get("county_nfhs", {})).items()}
 
     def nfhs_lens(key, name, emoji, icon, desc, hi, ramp):
         return {"id": key, "group": "health", "name": name, "icon": icon, "emoji": emoji,
                 "unit": "share (NFHS-5, 2019-21)", "format": "pct", "scale": "linear", "ramp": ramp,
                 "higher_is": hi, "source": "nfhs5",
-                "description": desc + " From the NFHS-5 district fact sheets (2019-21); blank for districts created "
-                "after 2017 or without a matching fact sheet.", "values": nf.get(key, [None] * n)}
+                "description": desc + " From the NFHS-5 district fact sheets (2019-21), drawn on the districts as "
+                "they were then: a district created since shows the district it was part of.",
+                "values": nf.get(key, [None] * n)}
 
     GOOD = ["#2a0e05", "#5a240a", "#8f4a14", "#c5862a", "#e8c95a", "#fff1b0"]
     BAD = list(reversed(GOOD))
@@ -223,7 +226,8 @@ def build() -> None:
             "ramp": ["#fff1b0", "#e8c95a", "#c5862a", "#8f4a14", "#5a240a", "#2a0e05"], "higher_is": "bad",
             "source": "niti_mpi",
             "description": "Share of people who are multidimensionally poor, by district: NITI Aayog's National MPI "
-            "(Progress Review 2023), computed from NFHS-5 (2019-21). Blank for districts created after 2017.",
+            "(Progress Review 2023), computed from NFHS-5 (2019-21), drawn on the districts as they were then: a "
+            "district created since shows the district it was part of.",
             "values": nf.get("mpi_poor", [None] * n),
         },
         {
@@ -282,7 +286,9 @@ def build() -> None:
             "ramp": ["#2a2018", "#5a3a20", "#8f5226", "#c2692a", "#e8873a", "#ffc06a"], "higher_is": "bad",
             "source": "usgs_quakes",
             "description": f"The largest magnitude among M5.5+ earthquakes since 1900 within {QUAKE_RADIUS_KM:.0f} km "
-            "of the hex centre (USGS catalogue). Blank where none was recorded.",
+            "of the hex centre (USGS catalogue). Hexes with none are shown as \"none recorded\": that is a finding, "
+            "not missing data.",
+            "null_label": "none recorded", "null_color": "#17120d",
             "values": maxmag,
         },
     ]

@@ -72,7 +72,9 @@ export function initPedia(data) {
       calculated only from sourced numbers, with the method in the tooltip (today's district population, carried forward
       from the 2011 census and scaled to the official state projection). Figures marked
       <span class="fact-tag projection">projection</span> are the government's own projections, not counts. Derived
-      figures are shown beside the data, never mixed into totals, yields or lenses.</p>
+      figures are shown beside the data, never mixed into totals or yields. The health and poverty lenses draw the
+      surveys on the districts as they were surveyed, so a district created after 2017 takes the colour of the district
+      it was part of.</p>
       ${Object.entries(pend).filter(([, v]) => v && v.length).map(([k, v]) => `<h4>${esc(label[k] || k)} (${v.length})</h4>
         <ul>${v.map((x) => `<li>${line(x)}</li>`).join("")}</ul>`).join("")}`;
     },

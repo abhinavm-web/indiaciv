@@ -552,6 +552,13 @@ def build() -> None:
                   "the state's official projection (Technical Group on Population Projections, MoHFW).")
 
     county_by_geoid = {r["geoid"]: r for r in county_rows}
+    # For the survey lenses only: a district created after 2017 takes its parent's survey values (see nfhs.py).
+    sheet_geoid = {v["sheet"]: g for g, v in nfhs["districts"].items() if v.get("sheet")}
+
+    def nfhs_parent(g, key):
+        parent_sheet = nfhs["districts"].get(g, {}).get("inherited_from")
+        pg = sheet_geoid.get(parent_sheet)
+        return county_by_geoid[pg]["nfhs"].get(key) if pg in county_by_geoid else None
 
     # ---- states -----------------------------------------------------------------------------------------------------
     gsdp = rbi["gsdp"]
@@ -1175,6 +1182,8 @@ def build() -> None:
         "county_pm25": [r["pm25"] for r in county_rows],
         "pm25_year": shrug["pm25_year"],
         "county_nfhs": {k: [r["nfhs"].get(k) for r in county_rows] for k in nfhs_keys},
+        "county_nfhs_map": {k: [r["nfhs"].get(k) if r["nfhs"].get(k) is not None else nfhs_parent(r["geoid"], k)
+                                for r in county_rows] for k in nfhs_keys},
         "cell_county": cell_county,
         "whs": [[s["name"] for s in g] for g in whs_groups],
     })

@@ -13,7 +13,7 @@ const intish = (v) =>
   Number.isInteger(v) || Math.abs(v) >= 10 ? compact(v) : Math.abs(v) < 1 ? String(+v.toPrecision(1)) : v.toFixed(1);
 
 export function formatLensValue(lens, v) {
-  if (v == null || !Number.isFinite(v)) return "no data";
+  if (v == null || !Number.isFinite(v)) return lens.null_label || "no data";
   switch (lens.format) {
     case "category": return lens.categories?.[Math.round(v)]?.name ?? "no data";
     case "inr": return inr(v);

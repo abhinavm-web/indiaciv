@@ -18,10 +18,12 @@ has been found, the value is `null` (shown as "–") and listed on the Almanac's
 **Derived** figures are the one exception, and are labelled as such wherever they appear (a "derived" tag with the
 method in its tooltip). They are calculated only from sourced numbers by a stated method, shown beside the data and
 never fed into totals, yields, ranks or lenses. Today there are three: SHRUG's SECC consumption estimates for cities (a published model estimate); the NFHS-5
-figures of the parent district for districts created after 2017 (shown beside their cities only); and each
+figures of the parent district for districts created after 2017; and each
 district's population on 1 July 2026, the
 2011 census count carried forward at the district's 2001-2011 growth and scaled with its state's other districts to
-the state's official projection (Technical Group on Population Projections, MoHFW). Official projections themselves
+the state's official projection (Technical Group on Population Projections, MoHFW). The health and poverty lenses
+draw NFHS-5 and the MPI on the districts as they were surveyed, so a district created after 2017 takes the colour of the
+district it was part of; its panel marks those figures derived. Official projections themselves
 are tagged "projection".
 
 ## What's in it (v1)

@@ -547,3 +547,6 @@ body.panel-open #lens-area { right: calc(394px + var(--dock-right, 0px)); }
   .yr-total > b { font-size: 30px; }
   .yr-row { padding: 7px 8px; }
 }
+
+/* indiaciv: a value with no published source yet */
+.yield-tile .val .pending { font-size: 11px; font-weight: 600; opacity: .6; letter-spacing: .02em; }

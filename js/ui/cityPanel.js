@@ -1,7 +1,7 @@
 import { css } from "../color.js";
 import { esc } from "../format.js";
 import { isCapital } from "../world.js";
-import { yieldGrid, amenities, industries, gdpRow, popLine, growthSpan, showPanel, hidePanel } from "./infoPanel.js";
+import { yieldGrid, amenities, industries, gdpRow, popLine, growthSpan, showPanel, hidePanel, factSections } from "./infoPanel.js";
 
 /**
  * ctx: {w, nation, onClose, onPedia, onState(stateIndex)}
@@ -34,8 +34,9 @@ export function openCityPanel(city, ctx) {
     sections: [
       { title: "Yields", html: `<div class="yield-grid">${yieldGrid(nation, city.yields)}</div>` },
       hasHousing(city) ? { title: "Amenities &amp; Housing", html: amenities(city, n) + gdpRow(city) }
-        : { title: "Economy", html: gdpRow(city) },
-      Object.keys(city.jobs || {}).length && { title: "Districts · where people work", html: industries(city, nation) },
+        : city.gdp != null && { title: "Economy", html: gdpRow(city) },
+      ...factSections(city),
+      Object.keys(city.jobs || {}).length && { title: "Workers · Census 2011", html: industries(city, nation) },
     ].filter(Boolean),
     foot: `Source: ${esc(nation.vintage)} (urban agglomeration or town). City GDP is Pending: India publishes no city GDP series.`,
     onClose: ctx.onClose,

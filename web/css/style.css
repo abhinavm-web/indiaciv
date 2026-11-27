@@ -550,3 +550,10 @@ body.panel-open #lens-area { right: calc(394px + var(--dock-right, 0px)); }
 
 /* indiaciv: a value with no published source yet */
 .yield-tile .val .pending { font-size: 11px; font-weight: 600; opacity: .6; letter-spacing: .02em; }
+
+/* Fact tags: "derived" = calculated from sourced numbers (method in the tooltip); "projection" = official projection. */
+.fact-tag { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 3px; font-size: 9.5px;
+  font-weight: 700; letter-spacing: .04em; text-transform: uppercase; vertical-align: 1px; cursor: help; }
+.fact-tag.derived { background: rgba(232, 160, 60, .18); color: #e8a03c; border: 1px solid rgba(232, 160, 60, .45); }
+.fact-tag.projection { background: rgba(110, 170, 230, .15); color: #7fb3e6; border: 1px solid rgba(110, 170, 230, .4); }
+.stat-row.is-derived b { font-style: italic; }

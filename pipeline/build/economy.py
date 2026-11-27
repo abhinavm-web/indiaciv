@@ -28,7 +28,7 @@ from ..core.store import load_interim, save_interim, write_web
 from .labels import label_anchor
 from .yields import HEX_AREA_KM2, YIELD_KEYS, YIELDS
 
-REQUIRES = ["_world", "_population", "_nfhs", "india_boundaries", "census2011", "census_a02", "census_a04", "rbi_states", "geonames",
+REQUIRES = ["_world", "_population", "_nfhs", "india_boundaries", "census2011", "census_a02", "census_a04", "pop_projections", "rbi_states", "geonames",
             "wikidata_sites", "wri_power_plants"]
 PRODUCES = ["cities.json", "states.json", "nation.json", "counties.json", "_economy", "_pending"]
 
@@ -118,6 +118,22 @@ def jobs(rec):
         vals = [rec.get(c) for c in cols]
         if any(v is not None for v in vals):
             out[k] = sum(v or 0 for v in vals)
+    return out
+
+
+def projection_facts(series, fips, pop2011, nat2011, year=2026):
+    """The Technical Group's projected population for 1 July `year` (an official projection, not a count)."""
+    v, nv = (series.get(fips) or {}).get(str(year)), (series.get("IN") or {}).get(str(year))
+    if not v:
+        return []
+    src = "Technical Group on Population Projections (MoHFW, 2020), Table 11"
+    out = [{"key": "pop_projected", "label": f"Projected population, 1 July {year}", "value": v, "national": nv,
+            "format": "int", "higher_is": None, "year": None, "source": src, "projection": True}]
+    if pop2011:
+        out.append({"key": "pop_projected_change", "label": "Change since the 2011 census", "value":
+                    round(v / pop2011 - 1, 4), "national": round(nv / nat2011 - 1, 4) if nv and nat2011 else None,
+                    "format": "pct", "higher_is": None, "year": None, "source": src + " (projection ÷ census 2011)",
+                    "projection": True})
     return out
 
 
@@ -246,6 +262,7 @@ def build() -> None:
     pending = defaultdict(list)
     a02 = load_interim("census_a02")["series"]
     a04 = load_interim("census_a04")["units"]
+    proj_series = load_interim("pop_projections")["series"]
     nfhs = load_interim("_nfhs")
     nfhs_keys = list(nfhs["keys"])
     # Growth 2001-2011 and the 1901-2011 series, exact only where an area is made of whole 2011 districts:
@@ -333,7 +350,9 @@ def build() -> None:
         if not exact and pop:
             pending["district_growth"].append({"district": name, "state": smeta[m["state_fips"]]["name"],
                                                "why": "its 2011 sub-districts came from a split 2011 district"})
+        trend = growth_of(history(olds)) if olds else None  # growth of the 2011 district(s) it came from
         county_rows.append({
+            "_trend": trend, "_trend_exact": exact,
             "growth": growth_of(hist), "pop2001": hist.get("2001"), "pop_series": hist or None,
             "geoid": g, "name": name, "state": smeta[m["state_fips"]]["abbr"], "si": fips_index[m["state_fips"]],
             "population": pop, "households": tot.get("No_HH"), "land_km2": round(area, 1),
@@ -352,10 +371,48 @@ def build() -> None:
             "yields": {**sum_cells(cells), "food": farm(tot), "gold": None},
         })
 
-    # ---- states -----------------------------------------------------------------------------------------------------
+    # ---- derived: district population today ------------------------------------------------------------------------
+    # Not published: the census of 2027 has not reported. A DERIVED estimate, labelled as such everywhere it is shown:
+    # each district's 2011 count is carried forward at its own 2001-2011 annual growth (a district carved from a split
+    # 2011 district takes the growth of the 2011 district(s) it came from), then the districts of each state are
+    # scaled together to the state's official projection for 1 July EST_YEAR (Technical Group, MoHFW). The state
+    # total is therefore the official projection; only the split between districts is estimated.
+    EST_YEAR = 2026
+    TREND_RANGE = (-0.10, 0.60)  # 2001-2011 change outside this: not carried forward (see below)
+    RESHAPED_STATES = {"01", "28", "36", "37"}  # J&K, AP, Telangana, Ladakh: not on their 2011 shape
     by_state = defaultdict(list)
     for r in county_rows:
         by_state[r["si"]].append(r)
+    nat_trend = growth_of(a02.get("IN", {}))
+    for si, rows in by_state.items():
+        fips = world["states"][si]
+        target = (proj_series.get(fips) or {}).get(str(EST_YEAR))
+        st_trend = growth_of(a02.get(fips, {})) if fips not in RESHAPED_STATES else None
+        raw = {}
+        for r in rows:
+            if not r["population"]:
+                continue
+            g = r["_trend"]
+            if g is None or not TREND_RANGE[0] <= g <= TREND_RANGE[1]:
+                # no usable trend of its own (outside the range the census itself usually shows, a sign of boundary
+                # or count changes): the state's 2001-2011 growth, else India's
+                g = st_trend if st_trend is not None else nat_trend
+                r["_trend_from"] = "state" if st_trend is not None else "India"
+            raw[r["geoid"]] = r["population"] * (1 + g) ** ((EST_YEAR - POP_YEAR) / 10)
+        for r in rows:
+            r["pop_est"] = round(raw[r["geoid"]] * target / sum(raw.values())) if target and r["geoid"] in raw \
+                else None
+            if r["population"] and r["pop_est"] is None:
+                pending["district_pop_est"].append({"district": r["name"], "state": smeta[fips]["name"],
+                                                    "why": "no official projection for its state"})
+    EST_METHOD = (f"Derived estimate for 1 July {EST_YEAR}, not a census count: the district's 2011 census count "
+                  "carried forward at its 2001-2011 growth rate (its state's rate where its own is unknown or outside "
+                  f"{TREND_RANGE[0]:+.0%} to {TREND_RANGE[1]:+.0%}), then scaled with the state's other districts to "
+                  "the state's official projection (Technical Group on Population Projections, MoHFW).")
+
+    county_by_geoid = {r["geoid"]: r for r in county_rows}
+
+    # ---- states -----------------------------------------------------------------------------------------------------
     gsdp = rbi["gsdp"]
     states = []
     cells_of_state = defaultdict(list)
@@ -401,6 +458,7 @@ def build() -> None:
             "jobs": jobs(tot), "median_income": None, "median_rent": None, "home_value": None,
             "unemployment": None, "rent_burden": None,
             "facts": {"People · Census 2011": people_facts(tot, nat_rec, ratio(urb, pop), nat_urban),
+                      f"Population {EST_YEAR} · official projection": projection_facts(proj_series, fips, pop, nat_rec["TOT_P"]),
                       "Development · latest published": state_indicators(rbi, fips),
                       "Health & housing · NFHS-5 2019-21": nfhs.get("states", {}).get(fips, []),
                       f"Economy by sector · {GDP_YEAR}": sector_facts(rbi, fips, gdp)},
@@ -630,6 +688,12 @@ def build() -> None:
             "households": rec.get("No_HH"), "literacy": literacy(rec),
             "yields": {**ys, "food": farm(rec), "gold": None},
             "facts": {"People · Census 2011": people_facts(rec, nat_rec),
+                      **({f"Its district · population {EST_YEAR}": [{
+                          "key": "district_pop_est", "label": f"{county_by_geoid[geoids[k]]['name']} district, "
+                          f"1 July {EST_YEAR}", "value": county_by_geoid[geoids[k]]["pop_est"], "national": None,
+                          "format": "int", "higher_is": None, "year": None, "derived": True, "method": EST_METHOD,
+                          "source": "Derived from the census 2011 and the Technical Group's state projection"}]}
+                         if k >= 0 and county_by_geoid.get(geoids[k], {}).get("pop_est") else {}),
                       **({f"Its district ({nfhs['districts'][geoids[k]]['sheet'] or nfhs['districts'][geoids[k]].get('mpi_district')}) · NFHS-5 2019-21":
                           nfhs["districts"][geoids[k]]["facts"]} if k >= 0 and geoids[k] in nfhs["districts"] else {})},
             "jobs": jobs(rec), "median_income": None, "median_rent": None, "home_value": None,
@@ -814,6 +878,8 @@ def build() -> None:
          "The 2011 census district that most of today's district's people lived in."),
         ("gdp", "GDP", "inr", "₹", "good", "rbi_states",
          "Pending: India publishes no comparable district GDP series."),
+        ("pop_est", f"Population {EST_YEAR} (derived estimate)", "int", None, "neutral", "pop_projections",
+         EST_METHOD),
         *[(k, v["label"], "pct", None, v["higher_is"], "niti_mpi" if k == "mpi_poor" else "nfhs5",
            "NITI Aayog National MPI 2023 (from NFHS-5, 2019-21) for the 2017 district of this name; blank where none "
            "matches." if k == "mpi_poor" else

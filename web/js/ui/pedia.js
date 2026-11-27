@@ -62,12 +62,17 @@ export function initPedia(data) {
       const label = { always: "Not published anywhere yet", state_gdp: "State GDP", districts: "Districts without census figures",
         cities: "Cities not placed", state_capitals: "Capitals not marked", sources: "Sources that did not answer",
         city_growth: "City growth 2001–2011", district_growth: "District growth 2001–2011", state_growth: "State growth 2001–2011",
-        district_nfhs: "Districts without NFHS-5 figures", district_mpi: "Districts without NITI poverty figures", oil_gas: "Oil & gas blocks not placed", boundaries: "Boundaries" };
+        district_nfhs: "Districts without NFHS-5 figures", district_mpi: "Districts without NITI poverty figures", district_pop_est: "Districts without a population estimate", oil_gas: "Oil & gas blocks not placed", boundaries: "Boundaries" };
       const line = (x) => esc(Object.entries(x).filter(([k]) => k !== "why").map(([, v]) => v).join(" · ") + (x.why ? ` — ${x.why}` : ""));
       return `
       ${h2("pedia", "📖", "Pending data")}
-      <p>The rule of this map: no number is invented or estimated. Where no systematic public source has been found yet,
-      the value is left blank ("–") and listed here, so the gaps are as visible as the data.</p>
+      <p>The rule of this map: no number is invented. Where no systematic public source has been found yet, the value is
+      left blank ("–") and listed here, so the gaps are as visible as the data.</p>
+      <p>A few figures are marked <span class="fact-tag derived">derived</span>: they are not published anywhere, but are
+      calculated only from sourced numbers, with the method in the tooltip (today's district population, carried forward
+      from the 2011 census and scaled to the official state projection). Figures marked
+      <span class="fact-tag projection">projection</span> are the government's own projections, not counts. Derived
+      figures are shown beside the data, never mixed into totals, yields or lenses.</p>
       ${Object.entries(pend).filter(([, v]) => v && v.length).map(([k, v]) => `<h4>${esc(label[k] || k)} (${v.length})</h4>
         <ul>${v.map((x) => `<li>${line(x)}</li>`).join("")}</ul>`).join("")}`;
     },

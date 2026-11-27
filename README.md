@@ -15,11 +15,18 @@ checksum recorded in `data/raw/<source>/manifest.json` and cited in the in-app *
 has been found, the value is `null` (shown as "–") and listed on the Almanac's **Pending data** page (from
 `nation.json` → `pending`). Nothing is typed in by hand, split by population or interpolated.
 
+**Derived** figures are the one exception, and are labelled as such wherever they appear (a "derived" tag with the
+method in its tooltip). They are calculated only from sourced numbers by a stated method, shown beside the data and
+never fed into totals, yields, ranks or lenses. Today there is one: each district's population on 1 July 2026, the
+2011 census count carried forward at the district's 2001-2011 growth and scaled with its state's other districts to
+the state's official projection (Technical Group on Population Projections, MoHFW). Official projections themselves
+are tagged "projection".
+
 ## What's in it (v1)
 
 - **The map.** 20 km hexes on an Albers equal-area projection, borders on the official boundary of India (Survey of
   India). Relief from AWS Terrain Tiles, land cover from ESA WorldCover 2021, rivers and lakes from Natural Earth.
-  36 states and UTs, 786 districts. Neighbouring countries are drawn under fog.
+  36 states and UTs, 790 districts. Neighbouring countries are drawn under fog.
 - **Population: Census 2011** (the latest India has published), from the census office's own Primary Census Abstract.
   India had 640 districts in 2011 and about 790 now, so each of the 5,988 census **sub-districts** is given, whole, to
   today's district that holds most of its area; its counts follow it. Every person in the census is placed
@@ -66,6 +73,7 @@ has been found, the value is `null` (shown as "–") and listed on the Almanac's
 | [PCA Urban Agglomerations 2011](https://censusindia.gov.in/nada/index.php/catalog/45261) (ORGI) | Cities | Download (xlsx) |
 | [Census 2011 Table A-02](https://censusindia.gov.in/nada/index.php/catalog/43333) (ORGI) | Growth 2001-2011, 1901-2011 series | Catalogue search, xlsx/xls (needs `xlrd` for .xls) |
 | [Global Energy Monitor](https://globalenergymonitor.org/projects/global-oil-gas-extraction-tracker/) Global Oil and Gas Extraction Tracker | Oil and gas blocks with a known location | CC BY 4.0; data file behind GEM's public map (August 2023) |
+| [Technical Group on Population Projections](https://nhm.gov.in/New_Updates_2018/Report_Population_Projection_2019.pdf) (MoHFW) | State projections to 2036; basis of the derived district estimate | Table 11 read with `pdftotext` |
 | [NITI Aayog National MPI 2023](https://www.niti.gov.in/sites/default/files/2023-08/India-National-Multidimentional-Poverty-Index-2023.pdf) | District poverty (multidimensional headcount, 2019-21) | District tables read from the PDF (needs `pymupdf` at fetch) |
 | [Census 2011 Table A-04](https://censusindia.gov.in/nada/index.php/catalog/42876) (ORGI) | City growth 2001-2011, 1901-2011 series | Catalogue search, six xlsx tables by size class |
 | [INDIAN-SHAPEFILES](https://github.com/datta07/INDIAN-SHAPEFILES) (MIT) | States, districts, 2011 sub-districts | Download, pinned commit |

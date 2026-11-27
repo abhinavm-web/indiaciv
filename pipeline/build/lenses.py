@@ -221,6 +221,18 @@ def build() -> None:
             "values": pc,
         },
         {
+            "id": "rural_income", "group": "prosperity", "name": "Rural incomes", "icon": "l-income", "emoji": "🌾",
+            "unit": "rural households whose top earner makes ₹10,000+/month (2011)", "format": "pct",
+            "scale": "linear", "ramp": ["#2a1a05", "#5a3a0a", "#8f6414", "#c59a2a", "#e8c95a", "#fff1b0"],
+            "higher_is": "good", "source": "shrug",
+            "description": "Share of rural households whose highest-earning member makes ₹10,000 or more a month, by "
+            "district: the Socio-Economic and Caste Census 2011 (Ministry of Rural Development), which asked every "
+            "rural household, via SHRUG. Rural households only, so a district with no villages is blank; so are "
+            "Kerala, Lakshadweep and Dadra & Nagar Haveli (not in SHRUG's SECC tables) and districts where the data "
+            "does not cover the census's rural households (listed under Pending).",
+            "values": spread(eco.get("county_rural_inc10k", [None] * len(density_c)), True),
+        },
+        {
             "id": "poverty", "group": "prosperity", "name": "Poverty", "icon": "l-income", "emoji": "📉",
             "unit": "multidimensionally poor (2019-21)", "format": "pct", "scale": "linear",
             "ramp": ["#fff1b0", "#e8c95a", "#c5862a", "#8f4a14", "#5a240a", "#2a0e05"], "higher_is": "bad",

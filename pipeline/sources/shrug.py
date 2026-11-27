@@ -9,7 +9,10 @@ town). Used here, at those two levels and at 2011 sub-districts:
 - employment in establishments at the 2013 Economic Census (MoSPI), by SHRUG's industry codes (city and district jobs);
 - SHRUG's estimate of urban consumption per person and the urban poverty rate, from the 2011 SECC (a model
   estimate by the SHRUG authors, labelled as such);
-- surface PM2.5 (van Donkelaar et al., satellite-based annual estimates), by 2011 sub-district.
+- surface PM2.5 (van Donkelaar et al., satellite-based annual estimates), by 2011 sub-district;
+- from the 2011 Socio-Economic and Caste Census (rural, Ministry of Rural Development), by 2011 sub-district: the share
+  of rural households whose highest-earning member makes ₹5,000+ and ₹10,000+ a month, with a salaried member, and
+  whose main income is cultivation or manual casual labour; and SHRUG's estimate of rural consumption per person.
 
 The download page hands out signed links that expire, so the fetch asks it for fresh ones each time. Licence:
 CC BY-NC-SA 4.0 (non-commercial, share-alike); data linked to SHRUG must be posted with SHRUG identifiers.
@@ -38,6 +41,8 @@ MODULES = {
                        "README.md": "README.md"},
     "shrug-secc-cons-urban-csv": {"secc_cons_urban_ua.csv": "secc_cons_urban_ua.csv"},
     "shrug-pm25-csv": {"pm25_pc11subdist.csv": "pm25_pc11subdist.csv"},
+    "shrug-secc-mord-rural-csv": {"secc_rural_pc11subdist.csv": "secc_rural_pc11subdist.csv"},
+    "shrug-secc-cons-rural-csv": {"secc_cons_rural_pc11subdist.csv": "secc_cons_rural_pc11subdist.csv"},
     "shrug-shric-desc-csv": {"shric_descriptions.csv": "shric_descriptions.csv"},
 }
 PM25_KEEP_FROM = 2011  # the sub-district PM2.5 table runs 1998-2020; keep 2011 on
@@ -45,7 +50,16 @@ PM25_KEEP_FROM = 2011  # the sub-district PM2.5 table runs 1998-2020; keep 2011 
 REDUCE = {"pc01_pca_clean_shrid.csv": ["shrid2", "pc01_pca_tot_p"],
           "pc11_pca_clean_shrid.csv": ["shrid2", "pc11_pca_tot_p"],
           "pc11r_shrid_key.csv": ["shrid2", "pc11_state_id", "pc11_district_id", "pc11_subdistrict_id",
-                                  "pc11_pca_tot_p"]}
+                                  "pc11_pca_tot_p"],
+          "secc_rural_pc11subdist.csv": ["pc11_state_id", "pc11_district_id", "pc11_subdistrict_id", "secc_hh",
+                                         "inc_5k_plus_share", "inc_10k_plus_share", "salary_any_share",
+                                         "salary_gov_share", "salary_priv_share", "inc_source_cultiv_share",
+                                         "inc_source_manlab_share"]}
+# SECC rural household shares kept (SHRUG names -> ours). The SECC (Ministry of Rural Development, enumerated
+# 2011-13) asked every rural household the monthly income of its highest-earning member, in three bands.
+SECC_SHARES = {"inc_5k_plus_share": "inc5k", "inc_10k_plus_share": "inc10k", "salary_any_share": "salaried",
+               "salary_gov_share": "salaried_gov", "salary_priv_share": "salaried_priv",
+               "inc_source_cultiv_share": "src_cultivation", "inc_source_manlab_share": "src_manual_labour"}
 # SHRUG industry codes (shric, 1-90) grouped into the sectors shown on the map.
 SECTORS = [
     ("manufacturing", "Manufacturing", list(range(5, 19)) + list(range(21, 33)) + [72]),
@@ -160,6 +174,28 @@ class Shrug(Source):
         for r in rows("ec13_pc11subdist.csv"):
             key = r["pc11_state_id"] + r["pc11_district_id"] + r["pc11_subdistrict_id"]
             sub[key] = {"emp": _f(r["ec13_emp_all"]), "emp_sectors": _sectors(r)}
+        for r in rows("secc_rural_pc11subdist.csv"):
+            key = r["pc11_state_id"] + r["pc11_district_id"] + r["pc11_subdistrict_id"]
+            hh = _f(r["secc_hh"])
+            shares = {ours: _f(r[theirs]) for theirs, ours in SECC_SHARES.items()}
+            if hh and shares["inc10k"] is not None:
+                sub.setdefault(key, {})["secc"] = {"hh": hh, **shares}
+        # Where SHRUG's SECC table holds one set of values for several 2011 districts (all of Delhi, for example),
+        # those values are not the sub-district's own: count, for each sub-district, how many districts share its
+        # exact shares, so a district made mostly of such sub-districts can be left blank.
+        groups = {}
+        for key, v in sub.items():
+            if "secc" in v:
+                sig = (key[:2], v["secc"]["inc10k"], v["secc"]["inc5k"], v["secc"]["salaried"])
+                groups.setdefault(sig, set()).add(key[:5])
+        for key, v in sub.items():
+            if "secc" in v:
+                v["secc"]["shared_by"] = len(groups[(key[:2], v["secc"]["inc10k"], v["secc"]["inc5k"],
+                                                     v["secc"]["salaried"])])
+        for r in rows("secc_cons_rural_pc11subdist.csv"):
+            key = r["pc11_state_id"] + r["pc11_district_id"] + r["pc11_subdistrict_id"]
+            if _f(r["secc_cons_pc_rural"]):
+                sub.setdefault(key, {})["cons_pc_rural"] = _f(r["secc_cons_pc_rural"])
         last = max(int(float(r["year"])) for r in rows("pm25_pc11subdist.csv"))
         for r in rows("pm25_pc11subdist.csv"):
             if int(float(r["year"])) != last:

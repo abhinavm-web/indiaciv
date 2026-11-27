@@ -28,7 +28,7 @@ from ..core.store import load_interim, save_interim, write_web
 from .labels import label_anchor
 from .yields import HEX_AREA_KM2, YIELD_KEYS, YIELDS
 
-REQUIRES = ["_world", "_population", "_nfhs", "india_boundaries", "census2011", "census_a02", "census_a04", "pop_projections", "shrug", "state_ddp", "rbi_states", "geonames",
+REQUIRES = ["_world", "_population", "_nfhs", "india_boundaries", "census2011", "census_a02", "census_a04", "pop_projections", "shrug", "state_ddp", "rbi_states", "mospi", "geonames",
             "wikidata_sites", "wri_power_plants"]
 PRODUCES = ["cities.json", "states.json", "nation.json", "counties.json", "_economy", "_pending"]
 
@@ -38,6 +38,21 @@ LAKH = 1e5
 MIN_CITY_POP = 100_000
 PEERS = 5
 PCT_KEYS = ["forest", "crop", "pasture", "grass", "shrub", "wetland", "developed"]
+SECC_KEYS = ("inc5k", "inc10k", "salaried", "salaried_gov", "salaried_priv", "src_cultivation", "src_manual_labour")
+SECC_LABELS = [("inc10k", "Top earner makes ₹10,000+ a month", "good"),
+               ("inc5k", "Top earner makes ₹5,000+ a month", "good"),
+               ("salaried", "A member has a salaried job", "good"),
+               ("salaried_gov", "  in government", "neutral"),
+               ("salaried_priv", "  in the private sector", "neutral"),
+               ("src_cultivation", "Main income: cultivation", "neutral"),
+               ("src_manual_labour", "Main income: manual casual labour", "bad")]
+SECC_SRC = "Ministry of Rural Development, via SHRUG v2.2"
+SECC_CONS_METHOD = ("SHRUG's small-area estimate (Asher, Lunt, Matsuura and Novosad): rural household consumption "
+                    "predicted from the assets and incomes recorded by the 2011 Socio-Economic and Caste Census, "
+                    "calibrated to the IHDS survey; averaged over the district's 2011 sub-districts weighted by rural "
+                    "population. A model estimate, not a count.")
+MOSPI_SRC = {"PLFS": "Periodic Labour Force Survey, calendar year 2025 (MoSPI eSankhyiki API)",
+             "HCES": "Household Consumption Expenditure Survey 2023-24, without imputation (MoSPI eSankhyiki API)"}
 EXCLUDED_FUELS = {"Nuclear"}
 WHS_MERGE_KM = 40.0
 FARM = ["MAIN_CL_P", "MAIN_AL_P", "MARG_CL_P", "MARG_AL_P"]
@@ -284,6 +299,61 @@ def build() -> None:
             pm_acc[g][0] += v["pm25"] * v["pm25_cells"]
             pm_acc[g][1] += v["pm25_cells"]
     pm25_dist = {g: round(a / w, 1) for g, (a, w) in pm_acc.items() if w}
+    # SECC 2011, rural (via SHRUG), by 2011 sub-district -> today's districts and states: household shares weighted
+    # by the households counted. Shown only where the SECC's households are SECC_COVER of the census's rural
+    # households in the same sub-districts (SHRUG has no SECC rural table for Kerala, Lakshadweep or Dadra & Nagar
+    # Haveli). SHRUG's rural consumption estimate is averaged over sub-districts weighted by rural population.
+    SECC_COVER = (0.8, 1.25)
+    SECC_SHARED = 3  # a sub-district whose exact SECC shares are shared by 3+ districts holds a coarser figure
+    cens_rhh, cens_rpop = defaultdict(float), {}
+    for key, rec in census["subdistricts"].items():
+        g = popd["subdistrict_district"].get(key)
+        if g:
+            cens_rhh[g] += rec["rural"].get("No_HH") or 0
+        cens_rpop[key] = rec["rural"].get("TOT_P") or 0
+    secc_acc = defaultdict(lambda: defaultdict(float))
+    cons_acc = defaultdict(lambda: [0.0, 0.0])
+    for key, v in shrug["subdistricts"].items():
+        g = popd["subdistrict_district"].get(key)
+        if not g:
+            continue
+        sc = v.get("secc")
+        if sc:
+            secc_acc[g]["hh"] += sc["hh"]
+            if sc.get("shared_by", 1) >= SECC_SHARED:
+                secc_acc[g]["spread_hh"] += sc["hh"]
+            for k in SECC_KEYS:
+                if sc.get(k) is not None:
+                    secc_acc[g][k] += sc[k] * sc["hh"]
+                    secc_acc[g][k + "_w"] += sc["hh"]
+        if v.get("cons_pc_rural") and cens_rpop.get(key):
+            cons_acc[g][0] += v["cons_pc_rural"] * cens_rpop[key]
+            cons_acc[g][1] += cens_rpop[key]
+
+    def secc_shares(acc, census_hh):
+        if not acc.get("hh") or not census_hh or not SECC_COVER[0] <= acc["hh"] / census_hh <= SECC_COVER[1]:
+            return None
+        return {"hh": round(acc["hh"]), **{k: round(acc[k] / acc[k + "_w"], 4) for k in SECC_KEYS
+                                            if acc.get(k + "_w")}}
+
+    secc_spread = {g for g, acc in secc_acc.items() if acc.get("spread_hh", 0) > 0.5 * acc["hh"]}
+    secc_dist = {g: x for g in cens_rhh if g not in secc_spread
+                 and (x := secc_shares(secc_acc.get(g, {}), cens_rhh[g]))}
+    secc_state_acc, secc_state_hh = defaultdict(lambda: defaultdict(float)), defaultdict(float)
+    for g, acc in secc_acc.items():
+        f_ = cmeta[g]["state_fips"]
+        for k, x in acc.items():
+            secc_state_acc[f_][k] += x
+    for g, n_ in cens_rhh.items():
+        secc_state_hh[cmeta[g]["state_fips"]] += n_
+    secc_state = {f_: x for f_ in secc_state_hh if (x := secc_shares(secc_state_acc.get(f_, {}), secc_state_hh[f_]))}
+    nat_acc = defaultdict(float)
+    for acc in secc_state_acc.values():
+        for k, x in acc.items():
+            nat_acc[k] += x
+    secc_nat = {"hh": round(nat_acc["hh"]), **{k: round(nat_acc[k] / nat_acc[k + "_w"], 4) for k in SECC_KEYS}}
+    rural_cons = {g: round(a / w) for g, (a, w) in cons_acc.items() if w and g in secc_dist}
+    mospi = load_interim("mospi")
     # Where SHRUG did not place a sub-district's Economic Census jobs (a sub-district of 100,000+ people with under
     # 1 job per 100: Model Town, Delhi, 101 jobs for 595,810 people), its district's jobs are not reliable: blank
     # (Pending). Where such sub-districts hold over a fifth of a state's people, all the state's districts are
@@ -310,6 +380,35 @@ def build() -> None:
     shrug_ok_2011 = {d for d, v in shrug_d01.items()
                      if (a02.get(d) or {}).get("2001") and abs(v / a02[d]["2001"] - 1) <= SHRUG_2001_CHECK}
     nat_emp, nat_sectors = shrug["national"]["emp"], shrug["national"]["emp_sectors"]
+
+    def secc_facts(sh, nat=None, cons=None):
+        """SECC 2011 rural household incomes (via SHRUG): the shares by band, salaried, main income source."""
+        if not sh:
+            return []
+        out = [{"key": f"secc_{k}", "label": lab, "value": sh[k], "national": (nat or {}).get(k), "format": "pct",
+                "higher_is": hi, "year": "2011", "source": f"SECC 2011 rural ({SECC_SRC}), {sh['hh']:,} households"}
+               for k, lab, hi in SECC_LABELS if sh.get(k) is not None]
+        if cons:
+            out.append({"key": "secc_cons_pc_rural", "label": "Rural consumption per person, a year (estimate)",
+                        "value": cons, "national": None, "format": "inr", "higher_is": "good", "year": "2011-12",
+                        "derived": True, "method": SECC_CONS_METHOD, "source": "SHRUG v2.2, SECC rural consumption"})
+        return out
+
+    def mospi_facts(fips):
+        m, nat_m = mospi["states"].get(fips, {}), mospi["states"].get("IN", {})
+        out = []
+        for k, lab, year, src in (
+                ("regular_wage", "Salaried employee, average monthly earnings", mospi["plfs_year"], "PLFS"),
+                ("casual_wage", "Casual labourer, average daily wage", mospi["plfs_year"], "PLFS"),
+                ("self_employed", "Self-employed, average earnings in 30 days", mospi["plfs_year"], "PLFS"),
+                ("mpce_rural", "Rural household spending per person, a month", mospi["hces_year"], "HCES"),
+                ("mpce_urban", "Urban household spending per person, a month", mospi["hces_year"], "HCES")):
+            if m.get(k) is None:
+                continue
+            out.append({"key": k, "label": lab, "value": round(m[k]), "national": round(nat_m[k]) if k in nat_m
+                        else None, "format": "inr", "higher_is": "good", "year": year,
+                        "source": MOSPI_SRC[src]})
+        return out
 
     def ec_unreliable(g):
         return g in ec_bad or cmeta[g]["state_fips"] in ec_bad_states
@@ -482,6 +581,14 @@ def build() -> None:
             pending["district_jobs"].append({"district": name, "state": smeta[m["state_fips"]]["name"],
                                              "why": "SHRUG did not place the Economic Census jobs of its 2011 "
                                                     "sub-districts consistently"})
+        if cens_rhh.get(g) and g not in secc_dist:
+            acc_hh = secc_acc.get(g, {}).get("hh", 0)
+            pending["district_rural_income"].append({
+                "district": name, "state": smeta[m["state_fips"]]["name"],
+                "why": "SHRUG has no SECC rural table for this state" if not acc_hh else
+                "SHRUG's SECC table gives most of its sub-districts one figure shared with other districts"
+                if g in secc_spread else f"the SECC's households are {acc_hh / cens_rhh[g]:.0%} of the census's rural households in its "
+                "2011 sub-districts"})
         trend = growth_of(history(olds)) if olds else None  # growth of the 2011 district(s) it came from
         county_rows.append({
             "_trend": trend, "_trend_exact": exact,
@@ -503,6 +610,9 @@ def build() -> None:
             "ec13_per100": round(ec_dist[g]["emp"] / pop * 100, 1) if g in ec_dist and pop and not ec_unreliable(g)
             else None,
             "pm25": pm25_dist.get(g),
+            "rural_inc10k": (secc_dist.get(g) or {}).get("inc10k"),
+            "rural_inc5k": (secc_dist.get(g) or {}).get("inc5k"),
+            "rural_salaried": (secc_dist.get(g) or {}).get("salaried"),
             "gdp": round(ddp_of[g]["value"]) if g in ddp_of else None,
             "gdp_measure": ddp_of[g]["measure"] if g in ddp_of else None,
             "gdp_year": ddp_of[g]["year"] if g in ddp_of else None,
@@ -623,7 +733,9 @@ def build() -> None:
                           sum(ec_dist[r["geoid"]]["emp"] for r in rows if r["geoid"] in ec_dist),
                           {k: sum(ec_dist[r["geoid"]]["emp_sectors"].get(k, 0) for r in rows if r["geoid"] in ec_dist)
                            for k in SECTOR_LABEL}, pop),
-                      f"Economy by sector · {GDP_YEAR}": sector_facts(rbi, fips, gdp)},
+                      f"Economy by sector · {GDP_YEAR}": sector_facts(rbi, fips, gdp),
+                      f"Earnings & spending · PLFS {mospi['plfs_year']}, HCES {mospi['hces_year']}": mospi_facts(fips),
+                      "Rural household incomes · SECC 2011": secc_facts(secc_state.get(fips), secc_nat)},
             "gdp": gdp, "gdp_year": GDP_YEAR, "gdp_by_sector": sectors or None,
             "nsdp_per_capita": pc, "gdp_series": {y: round(x * LAKH) for y, x in sorted((gsdp.get(fips) or {}).items())
                                                    if x is not None},
@@ -864,6 +976,9 @@ def build() -> None:
                              "year": ddp_joint[geoids[k]]["year"], "source": ddp_joint[geoids[k]]["source"] +
                              " (published for the two districts together; current prices)"}]}
                          if k >= 0 and geoids[k] in ddp_joint else {}),
+                      **({f"Its district ({county_by_geoid[geoids[k]]['name']}) · rural incomes, SECC 2011":
+                          secc_facts(secc_dist[geoids[k]], secc_nat, rural_cons.get(geoids[k]))}
+                         if k >= 0 and geoids[k] in secc_dist else {}),
                       **({f"Its district · population {EST_YEAR}": [{
                           "key": "district_pop_est", "label": f"{county_by_geoid[geoids[k]]['name']} district, "
                           f"1 July {EST_YEAR}", "value": county_by_geoid[geoids[k]]["pop_est"], "national": None,
@@ -1101,6 +1216,16 @@ def build() -> None:
          "Cultivators and agricultural labourers ÷ all workers, 2011."),
         ("parent_2011", "2011 district", "text", None, "neutral", "census2011",
          "The 2011 census district that most of today's district's people lived in."),
+        ("rural_inc10k", "Rural households, top earner ₹10,000+/month", "pct", None, "good", "shrug",
+         "Share of rural households whose highest-earning member makes ₹10,000 or more a month: Socio-Economic and "
+         "Caste Census 2011 (Ministry of Rural Development, via SHRUG), by 2011 sub-district. Blank where the SECC's "
+         "households are under 80% or over 125% of the census's rural households, and for Kerala, Lakshadweep and "
+         "Dadra & Nagar Haveli (not in SHRUG)."),
+        ("rural_inc5k", "Rural households, top earner ₹5,000+/month", "pct", None, "good", "shrug",
+         "As above, ₹5,000 or more a month."),
+        ("rural_salaried", "Rural households with a salaried member", "pct", None, "good", "shrug",
+         "Share of rural households with a member in a salaried job (government, public sector or private), SECC "
+         "2011."),
         ("gdp", "GDP (state's own estimate)", "inr", "₹", "good", "state_ddp",
          "District Domestic Product as published by the state's Directorate of Economics and Statistics, at current "
          "prices (gross, or net for Tamil Nadu; the year is in gdp_year). Methods differ by state: not comparable "
@@ -1144,6 +1269,13 @@ def build() -> None:
         "columns": columns, "rows": rows,
     }
 
+    for st in states:
+        if st["fips"] not in secc_state and secc_state_hh.get(st["fips"]):
+            pending["state_rural_income"].append({"state": st["name"], "why": "SHRUG has no SECC rural table for it"
+                                                  if not secc_state_acc.get(st["fips"]) else "the SECC's households "
+                                                  "do not match the census's rural households"})
+        if not mospi["states"].get(st["fips"]):
+            pending["state_earnings"].append({"state": st["name"], "why": "not in the PLFS or HCES tables"})
     pending["always"] = [
         {"what": "City GDP, and a district GDP series comparable across states",
          "why": "not published (states compile District Domestic Product each by its own method)"},
@@ -1180,6 +1312,7 @@ def build() -> None:
         "county_growth": [r["growth"] for r in county_rows],
         "county_ec13_per100": [r["ec13_per100"] for r in county_rows],
         "county_pm25": [r["pm25"] for r in county_rows],
+        "county_rural_inc10k": [r["rural_inc10k"] for r in county_rows],
         "pm25_year": shrug["pm25_year"],
         "county_nfhs": {k: [r["nfhs"].get(k) for r in county_rows] for k in nfhs_keys},
         "county_nfhs_map": {k: [r["nfhs"].get(k) if r["nfhs"].get(k) is not None else nfhs_parent(r["geoid"], k)

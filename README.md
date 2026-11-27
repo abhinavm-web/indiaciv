@@ -17,7 +17,7 @@ has been found, the value is `null` (shown as "–") and listed on the Almanac's
 
 **Derived** figures are the one exception, and are labelled as such wherever they appear (a "derived" tag with the
 method in its tooltip). They are calculated only from sourced numbers by a stated method, shown beside the data and
-never fed into totals, yields, ranks or lenses. Today there are three: SHRUG's SECC consumption estimates for cities (a published model estimate); the NFHS-5
+never fed into totals, yields, ranks or lenses. Today there are three: SHRUG's SECC consumption estimates for cities and for rural districts (a published model estimate); the NFHS-5
 figures of the parent district for districts created after 2017; and each
 district's population on 1 July 2026, the
 2011 census count carried forward at the district's 2001-2011 growth and scaled with its state's other districts to
@@ -81,7 +81,8 @@ are tagged "projection".
 | [Global Energy Monitor](https://globalenergymonitor.org/projects/global-oil-gas-extraction-tracker/) Global Oil and Gas Extraction Tracker | Oil and gas blocks with a known location | CC BY 4.0; data file behind GEM's public map (August 2023) |
 | [Technical Group on Population Projections](https://nhm.gov.in/New_Updates_2018/Report_Population_Projection_2019.pdf) (MoHFW) | State projections to 2036; basis of the derived district estimate | Table 11 read with `pdftotext` |
 | State Directorates of Economics and Statistics: [Maharashtra](https://mls.org.in/PDF2026/budjet/ESM_25_26_Eng%20Book.pdf), [Tamil Nadu](https://des.tn.gov.in/sites/default/files/2025-07/34.%20STATE%20INCOME.pdf), [Uttarakhand](https://des.uk.gov.in/district-domestic-product-estimates/), [Telangana](https://des.telangana.gov.in/publications/TS%20Economy%20PE2023-24.pdf) | District GDP, each state's own estimate (not comparable across states) | Tables read from each publication |
-| [SHRUG v2.2](https://www.devdatalab.org/shrug_download/) (Development Data Lab) | Economic Census 2013 jobs (cities, districts, states), SECC consumption estimate (cities), PM2.5 (districts) | **CC BY-NC-SA 4.0**; signed download links fetched fresh each run |
+| [SHRUG v2.2](https://www.devdatalab.org/shrug_download/) (Development Data Lab) | Economic Census 2013 jobs (cities, districts, states), SECC 2011 rural household incomes (districts, states; the Rural incomes lens), SECC consumption estimate (cities, rural districts), PM2.5 (districts) | **CC BY-NC-SA 4.0**; signed download links fetched fresh each run |
+| [MoSPI eSankhyiki API](https://api.mospi.gov.in) (Ministry of Statistics and Programme Implementation) | State earnings (PLFS 2025: salaried, casual, self-employed) and household spending per person (HCES 2023-24, rural and urban) | Government Open Data License - India; JSON API |
 | [NITI Aayog National MPI 2023](https://www.niti.gov.in/sites/default/files/2023-08/India-National-Multidimentional-Poverty-Index-2023.pdf) | District poverty (multidimensional headcount, 2019-21) | District tables read from the PDF (needs `pymupdf` at fetch) |
 | [Census 2011 Table A-04](https://censusindia.gov.in/nada/index.php/catalog/42876) (ORGI) | City growth 2001-2011, 1901-2011 series | Catalogue search, six xlsx tables by size class |
 | [INDIAN-SHAPEFILES](https://github.com/datta07/INDIAN-SHAPEFILES) (MIT) | States, districts, 2011 sub-districts | Download, pinned commit |
@@ -104,6 +105,10 @@ See the Almanac's *Pending data* page for the live list. The main gaps:
 - City GDP; district GDP outside Maharashtra, Tamil Nadu, Uttarakhand and Telangana (other states publish it, but
   each in its own format, and many state sites cannot be reached from the build machine); population after 2011 (the next census has not published results); growth for
   districts carved from split 2011 districts, and for Andhra Pradesh, Telangana and Jammu and Kashmir.
+- Rural household incomes (SECC 2011) for Kerala, Lakshadweep and Dadra & Nagar Haveli (not in SHRUG's SECC
+  tables; the official SECC site cannot be reached), and for districts where SHRUG spreads one figure over several
+  districts (all of Delhi, much of Meghalaya) or its households do not match the census's. Urban household incomes:
+  the urban SECC did not record income bands.
 - City-level jobs, incomes and rents (usaciv's City View and Advisors are off until Indian sources are wired in).
 - Economic Census jobs for cities whose SHRUG urban area does not match the census city (shared with a neighbour, or
   more than 15% different in 2011 population), and for districts where SHRUG did not place the jobs consistently
@@ -128,7 +133,7 @@ The web app is static: serve `web/` from any static host. Tests: `PYTHONPATH=. u
 ## Licences
 
 The code is MIT (see `LICENSE`). The data keeps its sources' licences, listed above and in the Almanac. One of them
-is share-alike and non-commercial: the figures built from **SHRUG** (Economic Census 2013 jobs, SECC consumption
+is share-alike and non-commercial: the figures built from **SHRUG** (Economic Census 2013 jobs, SECC rural incomes and consumption
 estimates and PM2.5, in `cities.json`, `states.json`, `counties.json` and `lenses.json`) are shared under
 [CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/), credited to the Development Data Lab, and
 published with SHRUG's identifiers (each city's `shrug_ua`; 2011 census sub-district codes for districts). This

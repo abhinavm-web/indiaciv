@@ -231,8 +231,9 @@ function reportGold(rep, nation, n, st, metros) {
   // GDP and population can come from different years (BEA GDP lags the ACS by a year): say which.
   const popYear = fin(nation.year) ? nation.year : null;
   const years = n.gdp_year && popYear && n.gdp_year !== popYear ? `${n.gdp_year} GDP ÷ ${popYear} residents` : "GDP ÷ residents";
-  if (pp != null) rep.context.push(`${money(pp)} per person (${years})`);
-  if (n.gdp_year) rep.context.push(`Year ${n.gdp_year}, current dollars`);
+  // India: GDP is 2022-23 and population 2011, so no per-person figure is formed from them (see the income lens).
+  if (pp != null && !(n.gdp_year && popYear && String(n.gdp_year).slice(0, 4) !== String(popYear))) rep.context.push(`${money(pp)} per person (${years})`);
+  if (n.gdp_year) rep.context.push(`Year ${n.gdp_year}, current prices (₹)`);
 
   const rows = Object.entries(n.gdp_by_industry || {})
     .filter(([, v]) => fin(v))

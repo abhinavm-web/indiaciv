@@ -37,7 +37,7 @@ export function openCityPanel(city, ctx) {
         : { title: "Economy", html: gdpRow(city) },
       Object.keys(city.jobs || {}).length && { title: "Districts · where people work", html: industries(city, nation) },
     ].filter(Boolean),
-    foot: `Source: ${esc(nation.vintage)}${nation.gdp_vintage ? `; GDP: ${esc(nation.gdp_vintage)}, split by population share (an estimate)` : ""}.`,
+    foot: `Source: ${esc(nation.vintage)} (urban agglomeration or town). City GDP is Pending: India publishes no city GDP series.`,
     onClose: ctx.onClose,
     onPedia: ctx.onPedia,
     wire(panel) {

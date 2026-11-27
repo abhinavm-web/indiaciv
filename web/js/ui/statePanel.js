@@ -36,7 +36,7 @@ export function openStatePanel(idx, ctx) {
     kind: "state",
     stripe: css(w.stateColor[idx] || [190, 190, 190]),
     title: name,
-    sub: `${esc(abbr)}${geo.fips ? ` · ISO IR-${esc(geo.fips)}` : ""}`,
+    sub: `${esc(abbr)}${st.iso ? ` · ISO ${esc(st.iso)}` : ""}${st.districts ? ` · ${st.districts} districts` : ""}`,
     headExtra: hasEcon ? popLine(st, growthSpan(st, n)) : "",
     sections: [
       st.yields && { title: "Yields · rank among states", html: `<div class="yield-grid">${yieldGrid(nation, st.yields, st.ranks, count)}</div>` },
@@ -45,7 +45,7 @@ export function openStatePanel(idx, ctx) {
       { title: "Biggest cities", html: cityRows },
       !hasEcon && { title: "Data", html: `<p class="muted">State statistics are not in this data build (states.json is missing).</p>` },
     ],
-    foot: `Source: ${esc(nation.vintage)}${nation.gdp_vintage ? `; GDP: ${esc(nation.gdp_vintage)}` : ""}. Ranks are among the ${count} states and UTs (1 = largest).`,
+    foot: `Source: ${esc(nation.vintage)}; GDP: the state's own ${esc(st.gdp_year || "")} GSDP (NSO, RBI handbook). Ranks are among the ${count} states and UTs (1 = largest).`,
     onClose: ctx.onClose,
     onPedia: ctx.onPedia,
     wire(panel) {

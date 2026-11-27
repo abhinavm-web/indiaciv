@@ -79,7 +79,7 @@ export function industries(o, nation, limit = 0) {
 export const gdpRow = (o) =>
   o.gdp != null
     ? `<div class="stat-row"><span class="sl">${icon("y-gold", "💰", { size: 14 })}GDP${o.gdp_year ? ` (${o.gdp_year})` : ""}</span><span><b>${money(o.gdp)}</b>${
-        o.population ? `<span class="cmp">${money(o.gdp / o.population)} per person</span>` : ""}</span></div>`
+        o.nsdp_per_capita != null ? `<span class="cmp" title="Per-capita Net State Domestic Product, ${esc(o.gdp_year || "")} (NSO)">${money(o.nsdp_per_capita)} per person</span>` : ""}</span></div>`
     : "";
 
 // " · ▲ 3.4% since 2021" from growth / growth_years (cities and states), compared with the U.S. in the tooltip.

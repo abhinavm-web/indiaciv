@@ -26,7 +26,7 @@ from ..core.store import load_interim, save_interim, write_web
 from .labels import label_anchor
 from .yields import HEX_AREA_KM2, YIELD_KEYS, YIELDS
 
-REQUIRES = ["_world", "_population", "india_boundaries", "census2011", "census_a02", "rbi_states", "geonames",
+REQUIRES = ["_world", "_population", "_nfhs", "india_boundaries", "census2011", "census_a02", "rbi_states", "geonames",
             "wikidata_sites", "wri_power_plants"]
 PRODUCES = ["cities.json", "states.json", "nation.json", "counties.json", "_economy", "_pending"]
 
@@ -243,6 +243,8 @@ def build() -> None:
     cmeta = {c["geoid"]: c for c in bounds["counties"]}
     pending = defaultdict(list)
     a02 = load_interim("census_a02")["series"]
+    nfhs = load_interim("_nfhs")
+    nfhs_keys = list(nfhs["keys"])
     # Growth 2001-2011 and the 1901-2011 series, exact only where an area is made of whole 2011 districts:
     # dest[2011 district] = today's districts its sub-districts went to.
     dest = defaultdict(set)
@@ -338,6 +340,8 @@ def build() -> None:
             "farm_share": ratio(farm(tot), tot.get("TOT_WORK_P")),
             "parent_2011": (d.get("parent_2011") or {}).get("name"),
             "jobs": jobs(tot),
+            "nfhs": {f["key"]: f["value"] for f in nfhs["districts"].get(g, {}).get("facts", [])},
+            "nfhs_sheet": nfhs["districts"].get(g, {}).get("sheet"),
             "gdp": None,
             "land": {kk: (round(sum(pct[kk][c] for c in land_cells) / len(land_cells) / 100, 4) if land_cells else None)
                      for kk in PCT_KEYS},
@@ -395,6 +399,7 @@ def build() -> None:
             "unemployment": None, "rent_burden": None,
             "facts": {"People · Census 2011": people_facts(tot, nat_rec, ratio(urb, pop), nat_urban),
                       "Development · latest published": state_indicators(rbi, fips),
+                      "Health & housing · NFHS-5 2019-21": nfhs.get("states", {}).get(fips, []),
                       f"Economy by sector · {GDP_YEAR}": sector_facts(rbi, fips, gdp)},
             "gdp": gdp, "gdp_year": GDP_YEAR, "gdp_by_sector": sectors or None,
             "nsdp_per_capita": pc, "gdp_series": {y: round(x * LAKH) for y, x in sorted((gsdp.get(fips) or {}).items())
@@ -587,7 +592,9 @@ def build() -> None:
             "population": rec["TOT_P"], "population_year": POP_YEAR, "employed": rec.get("TOT_WORK_P"),
             "households": rec.get("No_HH"), "literacy": literacy(rec),
             "yields": {**ys, "food": farm(rec), "gold": None},
-            "facts": {"People · Census 2011": people_facts(rec, nat_rec)},
+            "facts": {"People · Census 2011": people_facts(rec, nat_rec),
+                      **({f"Its district ({nfhs['districts'][geoids[k]]['sheet']}) · NFHS-5 2019-21":
+                          nfhs["districts"][geoids[k]]["facts"]} if k >= 0 and geoids[k] in nfhs["districts"] else {})},
             "jobs": jobs(rec), "median_income": None, "median_rent": None, "home_value": None,
             "unemployment": None, "rent_burden": None,
             "gdp": None, "gdp_year": None, "gdp_by_industry": None, "gdp_undisclosed": None, "gdp_estimated": None,
@@ -719,6 +726,9 @@ def build() -> None:
          "The 2011 census district that most of today's district's people lived in."),
         ("gdp", "GDP", "inr", "₹", "good", "rbi_states",
          "Pending: India publishes no comparable district GDP series."),
+        *[(k, v["label"], "pct", None, v["higher_is"], "nfhs5",
+           "NFHS-5 (2019-21) district fact sheet of the 2017 district of this name; blank where none matches.")
+          for k, v in nfhs["keys"].items()],
         ("forest", "Forest", "pct", None, "neutral", "worldcover", "Share of land that is tree cover."),
         ("crop", "Cropland", "pct", None, "neutral", "worldcover", "Share of land that is cropland."),
         ("developed", "Built-up", "pct", None, "neutral", "worldcover", "Share of land that is built-up."),
@@ -729,7 +739,8 @@ def build() -> None:
     columns = [f[0] for f in fields]
     rows = []
     for r in county_rows:
-        rec = {**r, **{k: r["land"][k] for k in ("forest", "crop", "developed")}, "cbsa": city_of_county.get(r["geoid"])}
+        rec = {**r, **{k: r["land"][k] for k in ("forest", "crop", "developed")}, **r["nfhs"],
+               "cbsa": city_of_county.get(r["geoid"])}
         rows.append([rec.get(c) for c in columns])
     counties_doc = {
         "vintage": f"Census {POP_YEAR} on today's districts",
@@ -744,6 +755,9 @@ def build() -> None:
                                                    "urban agglomerations as a series; not yet wired in"},
         {"what": "Population after 2011", "why": "the next census has not published results"},
     ]
+    pending["district_nfhs"] = nfhs["pending"]
+    pending["boundaries"] = [{"what": "Nagapattinam and Thiruvallur (Tamil Nadu)", "why": "missing from the boundary "
+                              "file; their areas are drawn inside neighbouring districts"}]
     if no_cap:
         pending["state_capitals"] = [{"state": s, "source": cap_source} for s in no_cap]
 
@@ -760,6 +774,7 @@ def build() -> None:
         "county_literacy": [r["literacy"] for r in county_rows],
         "county_farm_share": [r["farm_share"] for r in county_rows],
         "county_growth": [r["growth"] for r in county_rows],
+        "county_nfhs": {k: [r["nfhs"].get(k) for r in county_rows] for k in nfhs_keys},
         "cell_county": cell_county,
         "whs": [[s["name"] for s in g] for g in whs_groups],
     })

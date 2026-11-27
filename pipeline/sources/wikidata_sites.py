@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import time
 import urllib.parse
+import urllib.error
+import urllib.request
 
 from ..core import fetch as core_fetch
 from ..core.source import Source, SourceInfo
@@ -42,6 +44,21 @@ QUERIES = {
   FILTER(?links >= 8)
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". } }""",
 }
+
+
+API = "https://www.wikidata.org/w/api.php"
+UA = {"User-Agent": "indiaciv-pipeline/0.1 (https://github.com/abhinavm-web/indiaciv)"}
+ISO_CODES = ["AN", "AP", "AR", "AS", "BR", "CH", "CG", "DH", "DL", "GA", "GJ", "HR", "HP", "JK", "JH", "KA", "KL",
+             "LA", "LD", "MP", "MH", "MN", "ML", "MZ", "NL", "OD", "PY", "PB", "RJ", "SK", "TN", "TS", "TR", "UP",
+             "UK", "WB"]
+
+
+def _current(claims, prop):
+    """Values of a property that are not deprecated and have no end time (P582), preferred rank first."""
+    vals = [c for c in claims.get(prop, []) if c.get("rank") != "deprecated" and "P582" not in c.get("qualifiers", {})
+            and c["mainsnak"].get("datavalue")]
+    vals.sort(key=lambda c: c.get("rank") != "preferred")
+    return [c["mainsnak"]["datavalue"]["value"] for c in vals]
 
 
 def _point(wkt: str):
@@ -85,6 +102,58 @@ class WikidataSites(Source):
                     time.sleep(PAUSE_S)
             else:
                 print(f"    {key}: not fetched; this category stays pending")
+        if not (self.raw_dir / "capitals.json").exists():
+            try:
+                self._capitals_api(force)
+            except Exception as exc:
+                print(f"    capitals via the Wikidata API failed: {exc}")
+
+    def _capitals_api(self, force):
+        """Capitals through the Wikidata API (not the query service): each state's item by its ISO 3166-2 code
+        (P300), its current capital (P36) and the capital's coordinates (P625)."""
+        rel = "capitals_api.json"
+        if (self.raw_dir / rel).exists() and not force:
+            return
+        def get(params):
+            q = urllib.parse.urlencode({**params, "format": "json"})
+            for attempt in range(6):
+                time.sleep(2)
+                try:
+                    req = urllib.request.Request(f"{API}?{q}", headers=UA)
+                    with urllib.request.urlopen(req, timeout=60) as r:
+                        return json.loads(r.read().decode("utf-8"))
+                except urllib.error.HTTPError as exc:
+                    if exc.code != 429:
+                        raise
+                    time.sleep(int(exc.headers.get("Retry-After") or 10 * (attempt + 1)))
+            raise RuntimeError("Wikidata API kept answering 429")
+        items = {"IN": "Q668"}
+        for code in ISO_CODES:
+            hits = get({"action": "query", "list": "search", "srsearch": f"haswbstatement:P300=IN-{code}"})
+            res = hits["query"]["search"]
+            if len(res) == 1:
+                items[f"IN-{code}"] = res[0]["title"]
+        ents = {}
+        ids = list(items.values())
+        for k in range(0, len(ids), 40):
+            ents.update(get({"action": "wbgetentities", "ids": "|".join(ids[k:k + 40]), "props": "claims"})["entities"])
+        caps = {iso: [v["id"] for v in _current(ents[q]["claims"], "P36")] for iso, q in items.items()}
+        cap_ids = sorted({c for v in caps.values() for c in v})
+        cents = {}
+        for k in range(0, len(cap_ids), 40):
+            cents.update(get({"action": "wbgetentities", "ids": "|".join(cap_ids[k:k + 40]),
+                              "props": "claims|labels", "languages": "en"})["entities"])
+        rows = []
+        for iso, cl in caps.items():
+            for c in cl:
+                pts = _current(cents[c]["claims"], "P625")
+                if pts:
+                    rows.append({"iso": iso, "of": items[iso], "qid": c, "name":
+                                 cents[c].get("labels", {}).get("en", {}).get("value", c),
+                                 "lon": pts[0]["longitude"], "lat": pts[0]["latitude"]})
+        (self.raw_dir / rel).parent.mkdir(parents=True, exist_ok=True)
+        (self.raw_dir / rel).write_text(json.dumps(rows, indent=1), encoding="utf-8")
+        core_fetch.record(self.id, rel, API, note="wbsearch haswbstatement:P300, wbgetentities P36 and P625")
 
     def _rows(self, key):
         p = self.raw_dir / f"{key}.json"
@@ -123,13 +192,19 @@ class WikidataSites(Source):
         for r in self._rows("capitals") or []:
             caps.setdefault(r["iso"], []).append({"qid": r["qid"], "name": r.get("capLabel", r["name"]),
                                                    "lon": r["lon"], "lat": r["lat"]})
+        api = self.raw_dir / "capitals_api.json"
+        if not caps and api.exists():
+            for r in json.loads(api.read_text(encoding="utf-8")):
+                caps.setdefault(r["iso"], []).append({k: r[k] for k in ("qid", "name", "lon", "lat")})
         out["capitals"] = caps
         for r in out["universities"]:
             r["sitelinks"] = int(r.pop("links"))
-        if not (self.raw_dir / "capitals.json").exists():
-            pending.append("capitals")
-        else:
+        if (self.raw_dir / "capitals.json").exists():
             files.append("capitals.json")
+        elif (self.raw_dir / "capitals_api.json").exists():
+            files.append("capitals_api.json")
+        else:
+            pending.append("capitals")
         print(f"    {len(out['capitals'])} capitals, {len(out['whs'])} World Heritage items, {len(out['parks'])} national parks, "
               f"{len(out['universities'])} universities; pending: {pending or 'none'}")
         return {"vintage": "Wikidata (queried at build)", "_files": files, "pending": pending, **out}

@@ -41,6 +41,12 @@ has been found, the value is `null` (shown as "–") and listed on the Almanac's
   development indicators from the RBI handbook (rural and urban unemployment, multidimensional poverty, life
   expectancy, infant mortality, SDG India Index, forest cover, tourist visits, installed power, power per person)
   and GDP by sector.
+- **Health & housing: NFHS-5 (2019-21).** Twelve indicators (electricity, drinking water, sanitation, clean cooking
+  fuel, health insurance, women's literacy and schooling, child marriage, institutional births, child stunting and
+  underweight, women's anaemia) for 700 of today's districts, every state and India, read from the official IIPS fact
+  sheet PDFs (district PDFs via a pinned mirror, each fetch spot-checked value by value against the DHS Program's
+  copies; state and India sheets from the DHS Program's official compendiums). Matched to today's districts by name,
+  spelling variant or 2011 name; districts created after 2017 are Pending.
 - **Growth 2001-2011** from Census Table A-02 (with the 1901-2011 series): exact for the nation, states and today's
   districts made of whole 2011 districts; Pending where a 2011 district was split.
 - **Lenses.** Population density, growth, urban share, literacy, life expectancy, farm-worker share, poverty, urban
@@ -58,6 +64,7 @@ has been found, the value is `null` (shown as "–") and listed on the Almanac's
 | [Census 2011 Table A-02](https://censusindia.gov.in/nada/index.php/catalog/43333) (ORGI) | Growth 2001-2011, 1901-2011 series | Catalogue search, xlsx/xls (needs `xlrd` for .xls) |
 | [INDIAN-SHAPEFILES](https://github.com/datta07/INDIAN-SHAPEFILES) (MIT) | States, districts, 2011 sub-districts | Download, pinned commit |
 | [RBI Handbook of Statistics on Indian States](https://www.rbi.org.in/Scripts/AnnualPublications.aspx?head=Handbook+of+Statistics+on+Indian+States) | State GDP, value added by sector, per-capita NSDP, unemployment, poverty, life expectancy, infant mortality, SDG score, forest, tourism, power | 16 tables found on the page, xlsx |
+| [NFHS-5 fact sheets](https://rchiips.org/nfhs/districtfactsheet_NFHS-5.shtml) (IIPS, MoHFW) | District, state and India health & housing indicators | District PDFs from a pinned mirror, verified against [DHS Program](https://www.dhsprogram.com/) copies; state & India compendiums from DHS (needs `pdftotext`) |
 | [GeoNames](https://www.geonames.org/) (CC BY 4.0) | City positions, seats of government | Download |
 | [ESA WorldCover 2021](https://esa-worldcover.org/) | Land cover | Download (needs `rasterio`) |
 | [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) | Elevation | Download |

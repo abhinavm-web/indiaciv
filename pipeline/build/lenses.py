@@ -21,6 +21,7 @@ PRODUCES = ["lenses.json"]
 GROUPS = [
     {"id": "people", "name": "People"},
     {"id": "prosperity", "name": "Prosperity"},
+    {"id": "health", "name": "Health & housing"},
     {"id": "hazards", "name": "Hazards"},
     {"id": "land", "name": "Land"},
 ]
@@ -94,6 +95,31 @@ def build() -> None:
         return out
 
     density = spread(density_c, False)
+    nf = {k: spread(v, True) for k, v in eco.get("county_nfhs", {}).items()}
+
+    def nfhs_lens(key, name, emoji, icon, desc, hi, ramp):
+        return {"id": key, "group": "health", "name": name, "icon": icon, "emoji": emoji,
+                "unit": "share (NFHS-5, 2019-21)", "format": "pct", "scale": "linear", "ramp": ramp,
+                "higher_is": hi, "source": "nfhs5",
+                "description": desc + " From the NFHS-5 district fact sheets (2019-21); blank for districts created "
+                "after 2017 or without a matching fact sheet.", "values": nf.get(key, [None] * n)}
+
+    GOOD = ["#2a0e05", "#5a240a", "#8f4a14", "#c5862a", "#e8c95a", "#fff1b0"]
+    BAD = list(reversed(GOOD))
+    health = [
+        nfhs_lens("sanitation", "Sanitation", "🚽", "l-home", "Share of people living in households that use an "
+                  "improved sanitation facility.", "good", GOOD),
+        nfhs_lens("clean_fuel", "Clean cooking fuel", "🔥", "l-home", "Share of households cooking with clean fuel "
+                  "(electricity, LPG / natural gas, biogas).", "good", GOOD),
+        nfhs_lens("women_schooling", "Women's schooling", "🎓", "l-degrees", "Share of women aged 15-49 with 10 or "
+                  "more years of schooling.", "good", GOOD),
+        nfhs_lens("insurance", "Health insurance", "🏥", "l-uninsured", "Share of households with any usual member "
+                  "covered by a health insurance or financing scheme.", "good", GOOD),
+        nfhs_lens("stunting", "Child stunting", "📏", "l-people", "Share of children under 5 who are stunted "
+                  "(too short for their age).", "bad", BAD),
+        nfhs_lens("child_marriage", "Child marriage", "💍", "l-people", "Share of women aged 20-24 who were married "
+                  "before age 18.", "bad", BAD),
+    ]
     growth = spread(eco["county_growth"], True)
     urban = spread(eco["county_urban"], True)
     lit = spread(eco["county_literacy"], True)
@@ -241,6 +267,7 @@ def build() -> None:
             "values": maxmag,
         },
     ]
+    lenses += health
     pct, cover = world["pct"], world["cover"]
     for lid, (keys, meta) in LAND_LENSES.items():
         values = [round(sum(pct[k][i] for k in keys) / 100, 2) if owner[i] >= 0 and cover[i] else None

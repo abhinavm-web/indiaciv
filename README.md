@@ -37,8 +37,8 @@ are tagged "projection".
   the query service answers).
 - **Yields.**
   - **Gold** is GDP: Gross State Domestic Product at current prices, 2022-23 (National Statistical Office, via the
-    RBI *Handbook of Statistics on Indian States*), in rupees. District and city GDP: **Pending** (no comparable
-    official series).
+    RBI *Handbook of Statistics on Indian States*), in rupees. City GDP: **Pending**. District GDP is shown (not used as a yield) where a
+    state publishes it and its file is readable: each state's own estimate, labelled as not comparable across states.
   - **Food** is farm workers: cultivators + agricultural labourers, main and marginal (Census 2011).
   - **Production** is power-plant capacity in MW (WRI Global Power Plant Database, 2021; nuclear left out).
   - **Science** counts prominent universities, **Culture** UNESCO World Heritage properties (Wikidata).

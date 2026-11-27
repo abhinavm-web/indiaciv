@@ -227,6 +227,16 @@ def build() -> None:
             "values": nf.get("mpi_poor", [None] * n),
         },
         {
+            "id": "jobs_ec13", "group": "prosperity", "name": "Business jobs", "icon": "l-income", "emoji": "🏪",
+            "unit": "establishment jobs per 100 residents (2013)", "format": "float", "scale": "linear",
+            "ramp": ["#2a1a05", "#5a3a0a", "#8f6414", "#c59a2a", "#e8c95a", "#fff1b0"], "higher_is": "good",
+            "source": "shrug",
+            "description": "Non-farm jobs in establishments at the 2013 Economic Census (MoSPI, via SHRUG) per 100 "
+            "people counted in the district at the 2011 census. Includes shops, workshops, offices and public "
+            "services; crop farming is not counted.",
+            "values": spread(eco.get("county_ec13_per100", [None] * len(density_c)), True),
+        },
+        {
             "id": "unemployment", "group": "prosperity", "name": "Urban unemployment", "icon": "unemployment",
             "emoji": "😐", "unit": f"urban unemployment rate ({fact_year('unemployment_urban')})", "format": "pct",
             "scale": "linear", "ramp": ["#10241a", "#1f4a33", "#3f7a4f", "#c9a45c", "#d9703a", "#ff5a3a"],
@@ -245,6 +255,16 @@ def build() -> None:
             "Published for the larger states only; the others are blank.",
             "note": "State-wide values: every hex of a state has the same colour.",
             "values": state_fact("life_expectancy"),
+        },
+        {
+            "id": "pm25", "group": "hazards", "name": "Air pollution", "icon": "l-disasters", "emoji": "🌫️",
+            "unit": f"PM2.5, µg/m³ annual mean ({eco.get('pm25_year', '')})", "format": "float", "scale": "linear",
+            "ramp": ["#fff1b0", "#e8c95a", "#c5862a", "#8f4a14", "#5a240a", "#2a0e05"], "higher_is": "bad",
+            "source": "shrug",
+            "description": "Fine-particle air pollution: the annual mean surface PM2.5 estimated from satellites and a "
+            "chemical transport model (van Donkelaar et al.), averaged by SHRUG over each 2011 sub-district and here "
+            "over each district. India's annual standard is 40 µg/m³; the WHO guideline is 5.",
+            "values": spread(eco.get("county_pm25", [None] * len(density_c)), False),
         },
         {
             "id": "quakes", "group": "hazards", "name": "Earthquakes", "icon": "l-disasters", "emoji": "🌋",

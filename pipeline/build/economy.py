@@ -28,7 +28,7 @@ from ..core.store import load_interim, save_interim, write_web
 from .labels import label_anchor
 from .yields import HEX_AREA_KM2, YIELD_KEYS, YIELDS
 
-REQUIRES = ["_world", "_population", "_nfhs", "india_boundaries", "census2011", "census_a02", "census_a04", "pop_projections", "rbi_states", "geonames",
+REQUIRES = ["_world", "_population", "_nfhs", "india_boundaries", "census2011", "census_a02", "census_a04", "pop_projections", "shrug", "rbi_states", "geonames",
             "wikidata_sites", "wri_power_plants"]
 PRODUCES = ["cities.json", "states.json", "nation.json", "counties.json", "_economy", "_pending"]
 
@@ -263,8 +263,66 @@ def build() -> None:
     a02 = load_interim("census_a02")["series"]
     a04 = load_interim("census_a04")["units"]
     proj_series = load_interim("pop_projections")["series"]
+    shrug = load_interim("shrug")
+    SECTOR_LABEL = {x["key"]: x["label"] for x in shrug["sectors"]}
     nfhs = load_interim("_nfhs")
     nfhs_keys = list(nfhs["keys"])
+    # SHRUG by 2011 sub-district -> today's districts (the same sub-district assignment as the population):
+    # Economic Census 2013 employment adds up; PM2.5 is a mean over the sub-districts, weighted by their area.
+    ec_dist = defaultdict(lambda: {"emp": 0.0, "emp_sectors": defaultdict(float)})
+    pm_acc = defaultdict(lambda: [0.0, 0.0])
+    for key, v in shrug["subdistricts"].items():
+        g = popd["subdistrict_district"].get(key)
+        if not g:
+            continue
+        if v.get("emp") is not None:
+            ec_dist[g]["emp"] += v["emp"]
+            for k, x in v["emp_sectors"].items():
+                ec_dist[g]["emp_sectors"][k] += x
+        if v.get("pm25") is not None and v.get("pm25_cells"):
+            pm_acc[g][0] += v["pm25"] * v["pm25_cells"]
+            pm_acc[g][1] += v["pm25_cells"]
+    pm25_dist = {g: round(a / w, 1) for g, (a, w) in pm_acc.items() if w}
+    # Where SHRUG did not place a sub-district's Economic Census jobs (a sub-district of 100,000+ people with under
+    # 1 job per 100: Model Town, Delhi, 101 jobs for 595,810 people), its district's jobs are not reliable: blank
+    # (Pending). Where such sub-districts hold over a fifth of a state's people, all the state's districts are
+    # blank (the jobs went to the neighbouring sub-districts). State totals are unaffected.
+    bad_sub_pop, st_pop = defaultdict(int), defaultdict(int)
+    ec_bad = set()
+    for key, rec in census["subdistricts"].items():
+        p_ = rec["total"].get("TOT_P") or 0
+        st_pop[key[:2]] += p_
+        e = (shrug["subdistricts"].get(key) or {}).get("emp")
+        if p_ >= 100_000 and (e is None or e / p_ * 100 < 1):
+            bad_sub_pop[key[:2]] += p_
+            g = popd["subdistrict_district"].get(key)
+            if g:
+                ec_bad.add(g)
+    ec_bad_states = {st for st, p_ in bad_sub_pop.items() if p_ > 0.2 * st_pop[st]}
+    nat_emp, nat_sectors = shrug["national"]["emp"], shrug["national"]["emp_sectors"]
+
+    def ec_unreliable(g):
+        return g in ec_bad or cmeta[g]["state_fips"] in ec_bad_states
+
+    def ec_facts(emp, sectors, pop, top=8):
+        """Economic Census 2013 (via SHRUG): jobs in establishments, per 100 residents, and the biggest sectors."""
+        if not emp:
+            return []
+        src = "Economic Census 2013 (MoSPI), via SHRUG v2.2"
+        nat_pop = census["nation"]["total"]["TOT_P"]
+        out = [{"key": "ec13_emp", "label": "Jobs in establishments (non-farm)", "value": round(emp),
+                "national": round(nat_emp), "format": "int", "higher_is": None, "year": "2013", "source": src}]
+        if pop:
+            out.append({"key": "ec13_per100", "label": "Jobs in establishments per 100 residents (2011)",
+                        "value": round(emp / pop * 100, 1), "national": round(nat_emp / nat_pop * 100, 1),
+                        "format": "float", "higher_is": "good", "year": "2013", "source": src})
+        shares = sorted(((v / emp, k) for k, v in sectors.items() if v), reverse=True)[:top]
+        for sh, k in shares:
+            out.append({"key": f"ec13_{k}", "label": f"  {SECTOR_LABEL[k]}", "value": round(sh, 4),
+                        "national": round(nat_sectors[k] / nat_emp, 4) if nat_emp else None, "format": "pct",
+                        "higher_is": None, "year": "2013", "source": src + " (share of its establishment jobs)"})
+        return out
+
     # Growth 2001-2011 and the 1901-2011 series, exact only where an area is made of whole 2011 districts:
     # dest[2011 district] = today's districts its sub-districts went to.
     dest = defaultdict(set)
@@ -350,6 +408,10 @@ def build() -> None:
         if not exact and pop:
             pending["district_growth"].append({"district": name, "state": smeta[m["state_fips"]]["name"],
                                                "why": "its 2011 sub-districts came from a split 2011 district"})
+        if pop and g in ec_dist and ec_unreliable(g):
+            pending["district_jobs"].append({"district": name, "state": smeta[m["state_fips"]]["name"],
+                                             "why": "SHRUG did not place the Economic Census jobs of its 2011 "
+                                                    "sub-districts consistently"})
         trend = growth_of(history(olds)) if olds else None  # growth of the 2011 district(s) it came from
         county_rows.append({
             "_trend": trend, "_trend_exact": exact,
@@ -364,6 +426,10 @@ def build() -> None:
             "jobs": jobs(tot),
             "nfhs": {f["key"]: f["value"] for f in nfhs["districts"].get(g, {}).get("facts", [])},
             "nfhs_sheet": nfhs["districts"].get(g, {}).get("sheet"),
+            "ec13_emp": round(ec_dist[g]["emp"]) if g in ec_dist and not ec_unreliable(g) else None,
+            "ec13_per100": round(ec_dist[g]["emp"] / pop * 100, 1) if g in ec_dist and pop and not ec_unreliable(g)
+            else None,
+            "pm25": pm25_dist.get(g),
             "gdp": None,
             "land": {kk: (round(sum(pct[kk][c] for c in land_cells) / len(land_cells) / 100, 4) if land_cells else None)
                      for kk in PCT_KEYS},
@@ -461,6 +527,10 @@ def build() -> None:
                       f"Population {EST_YEAR} · official projection": projection_facts(proj_series, fips, pop, nat_rec["TOT_P"]),
                       "Development · latest published": state_indicators(rbi, fips),
                       "Health & housing · NFHS-5 2019-21": nfhs.get("states", {}).get(fips, []),
+                      "Jobs in businesses · Economic Census 2013": ec_facts(
+                          sum(ec_dist[r["geoid"]]["emp"] for r in rows if r["geoid"] in ec_dist),
+                          {k: sum(ec_dist[r["geoid"]]["emp_sectors"].get(k, 0) for r in rows if r["geoid"] in ec_dist)
+                           for k in SECTOR_LABEL}, pop),
                       f"Economy by sector · {GDP_YEAR}": sector_facts(rbi, fips, gdp)},
             "gdp": gdp, "gdp_year": GDP_YEAR, "gdp_by_sector": sectors or None,
             "nsdp_per_capita": pc, "gdp_series": {y: round(x * LAKH) for y, x in sorted((gsdp.get(fips) or {}).items())
@@ -610,7 +680,8 @@ def build() -> None:
         short = re.sub(r"^(Greater|Bruhat)\s+", "", name)
         names = [short, name] + ([clean_city(main["name"])] if main else [])
         raw.append({"small": (u["TOT_P"] or 0) < MIN_CITY_POP, "id": f"UA{u['st']}-{u['ua']}", "name": short, "census_name": u["name"], "kind": "urban agglomeration",
-                    "rec": u, "names": names, "allowed": allowed, "sub_keys": sub_keys})
+                    "rec": u, "names": names, "allowed": allowed, "sub_keys": sub_keys,
+                    "towns": [v["town"] for v in sorted(parts, key=lambda v: -(v["TOT_P"] or 0)) if v["town"]]})
     towns = {}
     # A town with an outgrowth comes as a "(M + OG)" row (town and outgrowth) next to a "(M)" row (the town alone)
     # under the same code: use the "+ OG" rows, as the census does for the town's own urban agglomeration. A town
@@ -636,7 +707,7 @@ def build() -> None:
                     "rec": t, "names": [clean_city(t["name"])] + ([clean_city(t["name"]).split()[0]] if t["TOT_P"] < MIN_CITY_POP
                                                          and clean_city(t["name"]).split() else []),
                     "allowed": allowed or went_st[t["st"]],
-                    "sub_keys": keys})
+                    "sub_keys": keys, "towns": [t["town"]]})
 
     raw.sort(key=lambda c: -(c["rec"]["TOT_P"] or 0))
     taken = set()
@@ -704,6 +775,7 @@ def build() -> None:
             "footprint": fp, "pop_series": {str(POP_YEAR): rec["TOT_P"]},
             "ranks": {}, "peers": [],
             "geonames": p["id"], "wikidata": None, "_sub_keys": c["sub_keys"], "_small": c["small"],
+            "_towns": c["towns"],
         })
 
     # Growth 2001-2011 (census table A-04): the unit with the city's exact 2011 population, preferring a numbered
@@ -797,6 +869,54 @@ def build() -> None:
     dropped = {c["id"] for c in cities if c["_small"] and not (c["capital"] or c["province_capital"])}
     cities = [c for c in cities if c["id"] not in dropped]
     county_owner = {k: cid for k, cid in county_owner.items() if cid not in dropped}
+
+    # SHRUG urban areas (2023 night-light footprints, each named after its main 2011 town): a city takes the area
+    # that most of its towns fall in, and uses it only when no other mapped city shares it and its 2011 population
+    # is within SHRUG_TOLERANCE of the city's own census count (the two footprints then cover about the same
+    # people). From it: Economic Census 2013 jobs and SHRUG's SECC consumption estimate. SHRUG's 2001 counts for
+    # these areas are not used for growth: for cities whose census unit grew, they match the old, smaller unit
+    # (Akbarpur: area x14, SHRUG 2001 = the old town's count), so they would repeat the boundary artefact.
+    SHRUG_TOLERANCE = 0.15
+    for c in cities:
+        votes = defaultdict(int)
+        for k, t in enumerate(c["_towns"]):
+            uid = shrug["town_ua"].get(t)
+            if uid:
+                votes[uid] += 2 if k == 0 else 1  # the main (largest) town counts double
+        c["_shrug_ua"] = max(votes, key=votes.get) if votes else None
+    ua_users = defaultdict(int)
+    for c in cities:
+        if c["_shrug_ua"]:
+            ua_users[c["_shrug_ua"]] += 1
+    for c in cities:
+        uid = c.pop("_shrug_ua")
+        a = shrug["ua"].get(uid) if uid else None
+        why = ("no SHRUG urban area for its towns" if not a else
+               "its SHRUG urban area also holds another mapped city" if ua_users[uid] > 1 else
+               "SHRUG's urban area differs from the census unit" if not a.get("pop2011") or
+               abs(a["pop2011"] / c["population"] - 1) > SHRUG_TOLERANCE else None)
+        if why:
+            pending["city_jobs"].append({"id": c["id"], "name": c["name"], "state": c["states"][0], "why": why})
+            continue
+        c["shrug_ua"] = uid
+        c["facts"]["Jobs in businesses · Economic Census 2013"] = ec_facts(a.get("emp"), a.get("emp_sectors", {}),
+                                                                            c["population"])
+        if a.get("cons_pc"):
+            c["facts"]["Spending · SHRUG estimate from SECC 2011-12"] = [
+                {"key": "secc_cons_pc", "label": "Consumption per person, a year", "value": round(a["cons_pc"]),
+                 "national": None, "format": "inr", "higher_is": "good", "year": "2011-12", "derived": True,
+                 "method": "SHRUG's small-area estimate (Asher, Lunt, Matsuura and Novosad): household consumption "
+                           "predicted from the assets and incomes recorded by the 2011 Socio-Economic and Caste "
+                           "Census, calibrated to the NSS consumption survey. A model estimate, not a count.",
+                 "source": "SHRUG v2.2, SECC urban consumption"},
+                *([{"key": "secc_pov_rate", "label": "Below the poverty line (estimate)", "value":
+                    round(a["pov_rate"], 4), "national": None, "format": "pct", "higher_is": "bad", "year": "2011-12",
+                    "derived": True, "method": "SHRUG's estimate of the share of people below the official "
+                    "(Tendulkar) urban poverty line, from the same model.", "source": "SHRUG v2.2"}]
+                  if a.get("pov_rate") is not None else [])]
+    for c in cities:
+        if c["growth"] is not None:
+            c["growth_source"] = "Census table A-04 (boundaries unchanged)"
     for st in states:
         if st["iso"] not in capitals:
             no_cap.append(f"{st['name']} (no capital in {cap_source})")
@@ -880,6 +1000,13 @@ def build() -> None:
          "Pending: India publishes no comparable district GDP series."),
         ("pop_est", f"Population {EST_YEAR} (derived estimate)", "int", None, "neutral", "pop_projections",
          EST_METHOD),
+        ("ec13_emp", "Jobs in establishments (2013)", "int", None, "neutral", "shrug",
+         "Non-farm employment in establishments at the 2013 Economic Census (MoSPI), via SHRUG, by 2011 sub-district."),
+        ("ec13_per100", "Establishment jobs per 100 residents", "float", None, "good", "shrug",
+         "Economic Census 2013 employment ÷ the 2011 census population × 100."),
+        ("pm25", "PM2.5 (µg/m³)", "float", None, "bad", "shrug",
+         "Annual mean surface PM2.5, satellite-based estimate (van Donkelaar et al.), via SHRUG, area-weighted over "
+         "the district's 2011 sub-districts."),
         *[(k, v["label"], "pct", None, v["higher_is"], "niti_mpi" if k == "mpi_poor" else "nfhs5",
            "NITI Aayog National MPI 2023 (from NFHS-5, 2019-21) for the 2017 district of this name; blank where none "
            "matches." if k == "mpi_poor" else
@@ -915,6 +1042,7 @@ def build() -> None:
     ]
     kept = {c["id"] for c in cities}
     pending["city_growth"] = [p for p in pending["city_growth"] if p.pop("id") in kept]
+    pending["city_jobs"] = [p for p in pending["city_jobs"] if p.pop("id") in kept]
     pending["district_nfhs"] = nfhs["pending"]
     pending["district_mpi"] = nfhs["mpi_pending"]
     pending["boundaries"] = [{"what": "\"Nazul\" (Delhi)", "why": "the boundary file's name for an outline holding the "
@@ -925,6 +1053,7 @@ def build() -> None:
     for c in cities:
         c.pop("_sub_keys", None)
         c.pop("_small", None)
+        c.pop("_towns", None)
     nation["pending"] = {k: v for k, v in pending.items()}
     write_web("cities.json", cities)
     write_web("states.json", states)
@@ -936,6 +1065,9 @@ def build() -> None:
         "county_literacy": [r["literacy"] for r in county_rows],
         "county_farm_share": [r["farm_share"] for r in county_rows],
         "county_growth": [r["growth"] for r in county_rows],
+        "county_ec13_per100": [r["ec13_per100"] for r in county_rows],
+        "county_pm25": [r["pm25"] for r in county_rows],
+        "pm25_year": shrug["pm25_year"],
         "county_nfhs": {k: [r["nfhs"].get(k) for r in county_rows] for k in nfhs_keys},
         "cell_county": cell_county,
         "whs": [[s["name"] for s in g] for g in whs_groups],

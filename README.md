@@ -74,6 +74,7 @@ are tagged "projection".
 | [Census 2011 Table A-02](https://censusindia.gov.in/nada/index.php/catalog/43333) (ORGI) | Growth 2001-2011, 1901-2011 series | Catalogue search, xlsx/xls (needs `xlrd` for .xls) |
 | [Global Energy Monitor](https://globalenergymonitor.org/projects/global-oil-gas-extraction-tracker/) Global Oil and Gas Extraction Tracker | Oil and gas blocks with a known location | CC BY 4.0; data file behind GEM's public map (August 2023) |
 | [Technical Group on Population Projections](https://nhm.gov.in/New_Updates_2018/Report_Population_Projection_2019.pdf) (MoHFW) | State projections to 2036; basis of the derived district estimate | Table 11 read with `pdftotext` |
+| [SHRUG v2.2](https://www.devdatalab.org/shrug_download/) (Development Data Lab) | Economic Census 2013 jobs (cities, districts, states), SECC consumption estimate (cities), PM2.5 (districts) | **CC BY-NC-SA 4.0**; signed download links fetched fresh each run |
 | [NITI Aayog National MPI 2023](https://www.niti.gov.in/sites/default/files/2023-08/India-National-Multidimentional-Poverty-Index-2023.pdf) | District poverty (multidimensional headcount, 2019-21) | District tables read from the PDF (needs `pymupdf` at fetch) |
 | [Census 2011 Table A-04](https://censusindia.gov.in/nada/index.php/catalog/42876) (ORGI) | City growth 2001-2011, 1901-2011 series | Catalogue search, six xlsx tables by size class |
 | [INDIAN-SHAPEFILES](https://github.com/datta07/INDIAN-SHAPEFILES) (MIT) | States, districts, 2011 sub-districts | Download, pinned commit |
@@ -96,6 +97,9 @@ See the Almanac's *Pending data* page for the live list. The main gaps:
 - District and city GDP; population after 2011 (the next census has not published results); growth for
   districts carved from split 2011 districts, and for Andhra Pradesh, Telangana and Jammu and Kashmir.
 - City-level jobs, incomes and rents (usaciv's City View and Advisors are off until Indian sources are wired in).
+- Economic Census jobs for cities whose SHRUG urban area does not match the census city (shared with a neighbour, or
+  more than 15% different in 2011 population), and for districts where SHRUG did not place the jobs consistently
+  (all of Delhi).
 - Oil and gas blocks without a location in GEM's tracker (14 of 23), smaller fields, and mines other than coal and
   iron ore.
 - Five districts with no 2011 census area (Mirpur and Muzaffarabad in Pakistan-administered Kashmir; three new
@@ -112,6 +116,15 @@ uv run python -m pipeline package        # indiaciv.zip: the static site, ready 
 
 The pipeline is standard-library Python (Excel files are read with a small built-in reader, `pipeline/core/xlsx.py`).
 The web app is static: serve `web/` from any static host. Tests: `PYTHONPATH=. uv run --with pytest pytest -q`.
+
+## Licences
+
+The code is MIT (see `LICENSE`). The data keeps its sources' licences, listed above and in the Almanac. One of them
+is share-alike and non-commercial: the figures built from **SHRUG** (Economic Census 2013 jobs, SECC consumption
+estimates and PM2.5, in `cities.json`, `states.json`, `counties.json` and `lenses.json`) are shared under
+[CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/), credited to the Development Data Lab, and
+published with SHRUG's identifiers (each city's `shrug_ua`; 2011 census sub-district codes for districts). This
+project is non-commercial; a commercial use of those figures needs the Development Data Lab's permission.
 
 ## Credits
 

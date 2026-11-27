@@ -58,8 +58,14 @@ export function factRows(list) {
     const fmt = FACT_FMT[f.format] || int;
     const hi = f.higher_is === "good" ? true : f.higher_is === "bad" ? false : null;
     const label = `${f.label}${f.year ? ` (${f.year})` : ""}`;
-    return statRow(null, "", label, f.value, f.national, fmt, hi).replace('<div class="stat-row">',
-      `<div class="stat-row" title="${esc(f.source || "")}">`);
+    // Derived figures (calculated from sourced numbers, not published anywhere) and official projections are tagged.
+    const tag = f.derived ? `<span class="fact-tag derived" title="${esc(f.method || "")}">derived</span>`
+      : f.projection ? `<span class="fact-tag projection" title="${esc(f.source || "")}">projection</span>` : "";
+    const tip = f.derived ? f.method || f.source || "" : f.source || "";
+    let html = statRow(null, "", label, f.value, f.national, fmt, hi).replace('<div class="stat-row">',
+      `<div class="stat-row${f.derived ? " is-derived" : ""}" title="${esc(tip)}">`);
+    if (tag) html = html.replace(`${esc(label)}</span>`, `${esc(label)} ${tag}</span>`);
+    return html;
   }).join("");
 }
 export function factSections(o) {

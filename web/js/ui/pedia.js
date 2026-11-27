@@ -62,7 +62,7 @@ export function initPedia(data) {
       const label = { always: "Not published anywhere yet", state_gdp: "State GDP", districts: "Districts without census figures",
         cities: "Cities not placed", state_capitals: "Capitals not marked", sources: "Sources that did not answer",
         city_growth: "City growth 2001–2011", district_growth: "District growth 2001–2011", state_growth: "State growth 2001–2011",
-        district_nfhs: "Districts without NFHS-5 figures", district_mpi: "Districts without NITI poverty figures", boundaries: "Boundaries" };
+        district_nfhs: "Districts without NFHS-5 figures", district_mpi: "Districts without NITI poverty figures", oil_gas: "Oil & gas blocks not placed", boundaries: "Boundaries" };
       const line = (x) => esc(Object.entries(x).filter(([k]) => k !== "why").map(([, v]) => v).join(" · ") + (x.why ? ` — ${x.why}` : ""));
       return `
       ${h2("pedia", "📖", "Pending data")}
@@ -119,8 +119,8 @@ export function initPedia(data) {
       const cats = [...new Set(r.types.map((t) => t.category || "other"))];
       return `
       ${h2("resources", "⛏️", "Resources")}
-      <p>Resources mark power plants and coal and iron ore mines on the tiles where they are (oil &amp; gas fields and
-      other minerals are still pending). What each type
+      <p>Resources mark power plants, coal and iron ore mines and the larger oil &amp; gas blocks on the tiles where
+      they are (other minerals are still pending). What each type
       includes is in its description (nuclear plants are left out of this map). When zoomed out, a hex shows its
       highest-ranked resource; zoom in to see more. Press <b>R</b> to show or hide them.</p>
       ${cats.map((c) => `<h4>${esc(CATEGORY[c] || c)}</h4><table class="res-table">

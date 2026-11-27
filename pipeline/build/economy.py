@@ -842,7 +842,8 @@ def build() -> None:
     pending["always"] = [
         {"what": "District and city GDP", "why": "no comparable official series is published"},
         {"what": "Population after 2011", "why": "the next census has not published results"},
-        {"what": "Oil and gas fields", "why": "no open, systematic field list with coordinates found yet"},
+        {"what": "Oil and gas fields below GEM's size threshold (1 million barrels of oil equivalent a year, or "
+                 "25 million in reserve)", "why": "no open, systematic field list with coordinates found yet"},
         {"what": "Mines other than coal and iron ore (bauxite, limestone, copper, zinc and others)",
          "why": "the Indian Bureau of Mines publishes lease lists by state without coordinates; not yet wired in"},
     ]

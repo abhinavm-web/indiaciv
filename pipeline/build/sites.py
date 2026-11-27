@@ -2,8 +2,9 @@
 
 Every site is placed on the Indian land hex at its point, or the nearest one within 2 hexes (island and coastal
 sites). Nuclear plants are left out of this map. Coal and iron ore mines are Global Energy Monitor's operating mines,
-at GEM's own coordinates, with GEM's capacity figure (tonnes a year) where GEM has one. Oil and gas fields and other
-minerals are pending: no systematic open source with coordinates has been wired in yet, and nothing is listed by hand.
+at GEM's own coordinates, with GEM's capacity figure (tonnes a year) where GEM has one. Oil and gas blocks are GEM's
+extraction tracker's, where it gives a real location (not its country-centre placeholder); the others, and blocks too
+far offshore to place, are listed as pending. Other minerals are pending: nothing is listed by hand.
 """
 
 from __future__ import annotations
@@ -19,7 +20,8 @@ from ..core.paths import WEB_DATA
 from ..core.store import load_interim, write_web
 from .economy import EXCLUDED_FUELS, land_cell, whs_properties
 
-REQUIRES = ["_world", "india_boundaries", "wikidata_sites", "wri_power_plants", "gem_mines", "counties.json", "cities.json"]
+REQUIRES = ["_world", "india_boundaries", "wikidata_sites", "wri_power_plants", "gem_mines", "gem_oil_gas",
+            "counties.json", "cities.json", "nation.json"]
 PRODUCES = ["resources.json", "wonders.json"]
 
 
@@ -44,7 +46,12 @@ PLANT_TYPES = {
     "Solar": _t("solar", "Solar farm", "energy", "☀️", "r-solar", "#ffc93c", "MW",
                 "Every solar farm in the WRI Global Power Plant Database (2021).", "wri_power_plants"),
 }
-FIELD_TYPES: list = []  # pending (see module docstring)
+FIELD_TYPES = [
+    _t("oil_gas", "Oil & gas block", "energy", "🛢️", "r-oil", "#2b2b2b", "block",
+       "Oil and gas extraction blocks and fields in Global Energy Monitor's Global Oil and Gas Extraction Tracker "
+       "(map data, August 2023) that have a known location; GOGET only covers the larger sites. Offshore blocks "
+       "within two hexes of the coast are drawn on the nearest land hex.", "gem_oil_gas"),
+]
 MINE_TYPES = {
     "coal": _t("coal_mine", "Coal mine", "mineral", "⛏️", "r-coal_mine", "#3b3430", "tons/yr",
                "Every operating coal mine in Global Energy Monitor's Global Coal Mine Tracker, with its capacity in "
@@ -96,7 +103,22 @@ def mine_items(place, mines):
     return items
 
 
-def resources(place, sites, plants, mines):
+def field_items(place, assets, missing):
+    items = []
+    for a in assets:
+        at = place(a["lon"], a["lat"]) if a["lat"] is not None else None
+        if not at:
+            missing.append({"what": a["name"], "why": "GEM's tracker gives no location" if a["lat"] is None
+                            else "offshore, more than 2 hexes from land"})
+            continue
+        bits = [a["fuel"] and f"{a['fuel']} {a['unit'] or ''}".strip(), a["status"], a["operator"],
+                a["start"] and f"producing since {a['start']}"]
+        items.append({"type": "oil_gas", "name": a["name"], "value": None,
+                      "detail": ", ".join(b for b in bits if b) or None, **at})
+    return items
+
+
+def resources(place, sites, plants, mines, fields=(), missing=None):
     items = []
     for p in sorted(plants, key=lambda p: -(p["mw"] or 0)):
         t = PLANT_TYPES.get(p["fuel"])
@@ -108,6 +130,7 @@ def resources(place, sites, plants, mines):
             items.append({"type": t["id"], "name": p["name"], "value": round(p["mw"]) if p["mw"] else None,
                           "detail": f"{p['fuel']}{yr}" + (f", {p['owner']}" if p["owner"] else ""), **at})
     items += mine_items(place, mines)
+    items += field_items(place, fields, missing if missing is not None else [])
     types = list(PLANT_TYPES.values()) + FIELD_TYPES + list(MINE_TYPES.values())
     present = {i["type"] for i in items}
     types = [t for t in types if t["id"] in present]
@@ -119,16 +142,17 @@ def resources(place, sites, plants, mines):
     for t in types:
         its = [i for i in items if i["type"] == t["id"]]
         vals = [i["value"] for i in its if i["value"] is not None]
-        national[t["id"]] = {"count": len(its), "value": sum(vals), "unit": t["unit"]}
+        add = t["unit"] in ("MW", "tons/yr")  # capacities add up; a count of blocks has no value to add
+        national[t["id"]] = {"count": len(its), "value": sum(vals) if add else None, "unit": t["unit"]}
         for i in its:
-            s = states[i["state"]].setdefault(t["id"], {"count": 0, "value": 0, "unit": t["unit"]})
+            s = states[i["state"]].setdefault(t["id"], {"count": 0, "value": 0 if add else None, "unit": t["unit"]})
             s["count"] += 1
-            if i["value"]:
+            if add and i["value"]:
                 s["value"] += i["value"]
     summary = {"note": "Totals of the mapped sites only. Power plants are the WRI database (2021) without nuclear. "
                        "Mines are Global Energy Monitor's operating coal and iron ore mines; tonnes a year are "
-                       "summed over the mines GEM gives a capacity for. Oil and gas fields and other minerals are "
-                       "pending.",
+                       "summed over the mines GEM gives a capacity for. Oil and gas blocks are GEM's, where it gives a "
+                       "location. Other minerals are pending.",
                "national": national, "states": dict(states)}
     return {"types": types, "items": items, "summary": summary}
 
@@ -184,8 +208,13 @@ def build() -> None:
     sites = load_interim("wikidata_sites")
     plants = load_interim("wri_power_plants")["plants"]
     mines = load_interim("gem_mines")
+    fields = load_interim("gem_oil_gas")["assets"]
     place = Placer(world)
-    res = resources(place, sites, plants, mines)
+    missing = []
+    res = resources(place, sites, plants, mines, fields, missing)
+    nation = json.loads((WEB_DATA / "nation.json").read_text())
+    nation.setdefault("pending", {})["oil_gas"] = missing
+    write_web("nation.json", nation)
     won = wonders(place, sites)
     write_web("resources.json", res)
     write_web("wonders.json", won)

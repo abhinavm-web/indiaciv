@@ -54,7 +54,7 @@ has been found, the value is `null` (shown as "–") and listed on the Almanac's
 - **Lenses.** Population density, growth, urban share, literacy, life expectancy, farm-worker share, poverty, urban
   unemployment, income per person, earthquakes since 1900 (USGS), forest, farmland, built-up land.
 - **Resources and wonders.** Coal, gas, oil, hydro, wind, solar and biomass power plants (WRI); operating coal and
-  iron ore mines (Global Energy Monitor); World Heritage sites,
+  iron ore mines and the larger oil and gas blocks (Global Energy Monitor); World Heritage sites,
   national parks and universities (Wikidata); Natural Earth roads, rail and ports; OurAirports airports with
   scheduled service.
 
@@ -65,6 +65,7 @@ has been found, the value is `null` (shown as "–") and listed on the Almanac's
 | [Census of India 2011, Primary Census Abstract](https://censusindia.gov.in/nada/index.php/catalog/42559) (ORGI) | Population, households, literacy, workers, cities | Download (xlsx) |
 | [PCA Urban Agglomerations 2011](https://censusindia.gov.in/nada/index.php/catalog/45261) (ORGI) | Cities | Download (xlsx) |
 | [Census 2011 Table A-02](https://censusindia.gov.in/nada/index.php/catalog/43333) (ORGI) | Growth 2001-2011, 1901-2011 series | Catalogue search, xlsx/xls (needs `xlrd` for .xls) |
+| [Global Energy Monitor](https://globalenergymonitor.org/projects/global-oil-gas-extraction-tracker/) Global Oil and Gas Extraction Tracker | Oil and gas blocks with a known location | CC BY 4.0; data file behind GEM's public map (August 2023) |
 | [NITI Aayog National MPI 2023](https://www.niti.gov.in/sites/default/files/2023-08/India-National-Multidimentional-Poverty-Index-2023.pdf) | District poverty (multidimensional headcount, 2019-21) | District tables read from the PDF (needs `pymupdf` at fetch) |
 | [Census 2011 Table A-04](https://censusindia.gov.in/nada/index.php/catalog/42876) (ORGI) | City growth 2001-2011, 1901-2011 series | Catalogue search, six xlsx tables by size class |
 | [INDIAN-SHAPEFILES](https://github.com/datta07/INDIAN-SHAPEFILES) (MIT) | States, districts, 2011 sub-districts | Download, pinned commit |
@@ -87,7 +88,8 @@ See the Almanac's *Pending data* page for the live list. The main gaps:
 - District and city GDP; population after 2011 (the next census has not published results); growth for
   districts carved from split 2011 districts, and for Andhra Pradesh, Telangana and Jammu and Kashmir.
 - City-level jobs, incomes and rents (usaciv's City View and Advisors are off until Indian sources are wired in).
-- Oil and gas fields, and mines other than coal and iron ore.
+- Oil and gas blocks without a location in GEM's tracker (14 of 23), smaller fields, and mines other than coal and
+  iron ore.
 - Five districts with no 2011 census area (Mirpur and Muzaffarabad in Pakistan-administered Kashmir; three new
   districts drawn from sub-districts that straddle older ones).
 

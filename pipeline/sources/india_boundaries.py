@@ -119,11 +119,14 @@ class IndiaBoundaries(Source):
                 "code": p.get("dist_code") if p.get("dist_code") not in (None, "NOT AVAILABLE") else None,
                 "wikidata": None, "rings": _rings(f["geometry"]),
             })
-        # Some districts come as two features with the same LGD district code (e.g. Purba Medinipur): merge them.
+        # Some districts come as two features with the same LGD code and the same name (Purba Medinipur, whose two
+        # outlines differ only in their garbled spelling): merge those. Features that share a code but not a name
+        # are different districts with a wrong code in the source (Chennai / Thiruvallur, Nagapattinam /
+        # Mayiladuthurai, Baksa / Tamulpur) and stay separate.
         by_code: dict[tuple, dict] = {}
         merged_counties = []
         for c in counties:
-            k = (c["state_fips"], c["code"]) if c["code"] else None
+            k = (c["state_fips"], c["code"], re.sub(r"[^a-z]", "", c["name"].lower())) if c["code"] else None
             if k and k in by_code:
                 by_code[k]["rings"] += c["rings"]
                 continue

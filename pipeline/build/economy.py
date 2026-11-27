@@ -797,8 +797,8 @@ def build() -> None:
         {"what": "Population after 2011", "why": "the next census has not published results"},
     ]
     pending["district_nfhs"] = nfhs["pending"]
-    pending["boundaries"] = [{"what": "Nagapattinam and Thiruvallur (Tamil Nadu)", "why": "missing from the boundary "
-                              "file; their areas are drawn inside neighbouring districts"}]
+    pending["boundaries"] = [{"what": "\"Nazul\" (Delhi)", "why": "the boundary file's name for an outline holding the "
+                              "2011 sub-districts Sadar Bazar and Gandhi Nagar; not an official district name"}]
     if no_cap:
         pending["state_capitals"] = [{"state": s, "source": cap_source} for s in no_cap]
 

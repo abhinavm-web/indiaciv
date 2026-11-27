@@ -17,7 +17,9 @@ has been found, the value is `null` (shown as "–") and listed on the Almanac's
 
 **Derived** figures are the one exception, and are labelled as such wherever they appear (a "derived" tag with the
 method in its tooltip). They are calculated only from sourced numbers by a stated method, shown beside the data and
-never fed into totals, yields, ranks or lenses. Today there is one: each district's population on 1 July 2026, the
+never fed into totals, yields, ranks or lenses. Today there are three: SHRUG's SECC consumption estimates for cities (a published model estimate); the NFHS-5
+figures of the parent district for districts created after 2017 (shown beside their cities only); and each
+district's population on 1 July 2026, the
 2011 census count carried forward at the district's 2001-2011 growth and scaled with its state's other districts to
 the state's official projection (Technical Group on Population Projections, MoHFW). Official projections themselves
 are tagged "projection".
@@ -55,7 +57,9 @@ are tagged "projection".
   copies; state and India sheets from the DHS Program's official compendiums). Matched to today's districts by name,
   spelling variant or 2011 name; districts created after 2017 are Pending.
 - **Growth 2001-2011** from Census Table A-02 (with the 1901-2011 series): exact for the nation, states and today's
-  districts made of whole 2011 districts; Pending where a 2011 district was split. Cities from Census Table A-04
+  districts made of whole 2011 districts. Where a 2011 district was split, growth is summed over SHRUG's consistent
+  small areas (census 2001 and 2011 on the same villages and towns), used only where SHRUG's 2001 total for each
+  2011 district involved is within 2% of the census's own; the rest are Pending. Cities from Census Table A-04
   (each town and agglomeration at every census since 1901, on its boundaries at that census), matched by the exact
   2011 population; cities that were not census towns in 2001 are Pending.
 - **Lenses.** Population density, growth, urban share, literacy, life expectancy, farm-worker share, poverty, urban

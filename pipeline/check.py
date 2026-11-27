@@ -526,7 +526,8 @@ def check_lenses(r: Report, doc, ctx: dict | None, source_ids: set | None) -> No
             off = [i for i, v in enumerate(vals) if v is not None and ctx["owner"][i] < 0]
             if off:
                 r.fail(f"{what}: {len(off)} values on non-US cells (must be null)")
-        if lens["format"] == "pct" and any(is_num(v) and not -1 - 1e-9 <= v <= 1 + 1e-9 for v in vals):
+        top = GROWTH_MAX if lens.get("id") == "growth" else 1  # a decade's growth can pass 100% (Kurung Kumey)
+        if lens["format"] == "pct" and any(is_num(v) and not -1 - 1e-9 <= v <= top + 1e-9 for v in vals):
             r.fail(f"{what}: format pct but some values are outside -1..1 (pct lenses are fractions)")
         if lens["format"] == "category":
             n = len(lens["categories"]) if isinstance(lens.get("categories"), list) else 0
@@ -672,7 +673,8 @@ def check_counties(r: Report, doc, ctx: dict | None, city_ids: set | None) -> No
             if fmt[k] == "text":
                 if not isinstance(v, str):
                     errs[f"{k} not text"] += 1
-            elif not is_num(v) or (fmt[k] == "pct" and not -1 <= v <= 1) or (k in ("population", "land_km2", "density") and v < 0):
+            elif not is_num(v) or (fmt[k] == "pct" and not -1 <= v <= (GROWTH_MAX if k == "growth" else 1)) or \
+                    (k in ("population", "land_km2", "density") and v < 0):
                 errs[f"{k} out of range"] += 1
         if not (isinstance(rec["geoid"], str) and re.fullmatch(r"\d{5}", rec["geoid"])):
             errs["geoid not 5 digits"] += 1

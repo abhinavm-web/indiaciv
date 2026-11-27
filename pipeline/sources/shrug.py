@@ -4,7 +4,8 @@ SHRUG links India's censuses to consistent small areas ("shrids": villages and t
 1991 to 2011) and to urban areas drawn from 2023 night-time lights (SHRUG's "ua", each named after its main 2011
 town). Used here, at those two levels and at 2011 sub-districts:
 
-- population at the 2001 and 2011 censuses on the same urban area (city growth on fixed boundaries);
+- population at the 2001 and 2011 censuses on consistent small areas, summed to 2011 sub-districts (district growth
+  where a 2011 district was split; checked against the census's own 2001 count of each 2011 district);
 - employment in establishments at the 2013 Economic Census (MoSPI), by SHRUG's industry codes (city and district jobs);
 - SHRUG's estimate of urban consumption per person and the urban poverty rate, from the 2011 SECC (a model
   estimate by the SHRUG authors, labelled as such);
@@ -29,10 +30,10 @@ from ..core.source import Source, SourceInfo
 INDEX = "https://www.devdatalab.org/shrug_download/data"
 # module file stem in the signed URL -> members to keep (name in zip -> name in raw/)
 MODULES = {
-    "shrug-pc-keys-csv": {"pc11u_shrid_key.csv": "pc11u_shrid_key.csv"},
+    "shrug-pc-keys-csv": {"pc11u_shrid_key.csv": "pc11u_shrid_key.csv", "pc11r_shrid_key.csv": "pc11r_shrid_key.csv"},
     "shrug-shrid-keys-csv": {"viirs_2023_7_5_500_ua_shrid2_key.csv": "ua_shrid2_key.csv"},
-    "shrug-pca01-csv": {"pc01_pca_clean_ua.csv": "pc01_pca_ua.csv"},
-    "shrug-pca11-csv": {"pc11_pca_clean_ua.csv": "pc11_pca_ua.csv"},
+    "shrug-pca01-csv": {"pc01_pca_clean_ua.csv": "pc01_pca_ua.csv", "pc01_pca_clean_shrid.csv": "pc01_shrid_pop.csv"},
+    "shrug-pca11-csv": {"pc11_pca_clean_ua.csv": "pc11_pca_ua.csv", "pc11_pca_clean_shrid.csv": "pc11_shrid_pop.csv"},
     "shrug-ec13-csv": {"ec13_ua.csv": "ec13_ua.csv", "ec13_pc11subdist.csv": "ec13_pc11subdist.csv",
                        "README.md": "README.md"},
     "shrug-secc-cons-urban-csv": {"secc_cons_urban_ua.csv": "secc_cons_urban_ua.csv"},
@@ -40,6 +41,11 @@ MODULES = {
     "shrug-shric-desc-csv": {"shric_descriptions.csv": "shric_descriptions.csv"},
 }
 PM25_KEEP_FROM = 2011  # the sub-district PM2.5 table runs 1998-2020; keep 2011 on
+# Big shrid-level tables: keep only the columns used.
+REDUCE = {"pc01_pca_clean_shrid.csv": ["shrid2", "pc01_pca_tot_p"],
+          "pc11_pca_clean_shrid.csv": ["shrid2", "pc11_pca_tot_p"],
+          "pc11r_shrid_key.csv": ["shrid2", "pc11_state_id", "pc11_district_id", "pc11_subdistrict_id",
+                                  "pc11_pca_tot_p"]}
 # SHRUG industry codes (shric, 1-90) grouped into the sectors shown on the map.
 SECTORS = [
     ("manufacturing", "Manufacturing", list(range(5, 19)) + list(range(21, 33)) + [72]),
@@ -114,7 +120,13 @@ class Shrug(Source):
             with zipfile.ZipFile(io.BytesIO(blob)) as z:
                 for member, name in MODULES[module].items():
                     dest = self.raw_dir / name
-                    if member == "pm25_pc11subdist.csv":  # keep the recent years only
+                    if member in REDUCE:
+                        with z.open(member) as f, open(dest, "w", encoding="utf-8", newline="") as out:
+                            rd = csv.DictReader(io.TextIOWrapper(f, encoding="utf-8"))
+                            w = csv.writer(out)
+                            w.writerow(REDUCE[member])
+                            w.writerows([r[c] for c in REDUCE[member]] for r in rd)
+                    elif member == "pm25_pc11subdist.csv":  # keep the recent years only
                         with z.open(member) as f, open(dest, "w", encoding="utf-8", newline="") as out:
                             rd = csv.DictReader(io.TextIOWrapper(f, encoding="utf-8"))
                             w = csv.DictWriter(out, fieldnames=rd.fieldnames)
@@ -154,6 +166,23 @@ class Shrug(Source):
                 continue
             key = r["pc11_state_id"] + r["pc11_district_id"] + r["pc11_subdistrict_id"]
             sub.setdefault(key, {}).update({"pm25": _f(r["pm25_mean"]), "pm25_cells": _f(r["pm25_num_cells"])})
+        # 2001 and 2011 census population on consistent shrids, each shrid given to the 2011 sub-district holding
+        # most of its 2011 people.
+        weights = {}
+        for name in ("pc11r_shrid_key.csv", "pc11u_shrid_key.csv"):
+            for r in rows(name):
+                key = r["pc11_state_id"] + r["pc11_district_id"] + r["pc11_subdistrict_id"]
+                w = weights.setdefault(r["shrid2"], {})
+                w[key] = w.get(key, 0) + (_f(r["pc11_pca_tot_p"]) or 0) + 1e-3
+        weight = {sh: max(w, key=w.get) for sh, w in weights.items()}
+        del weights
+        for year, name, col in (("2001", "pc01_shrid_pop.csv", "pc01_pca_tot_p"),
+                                ("2011", "pc11_shrid_pop.csv", "pc11_pca_tot_p")):
+            for r in rows(name):
+                key = weight.get(r["shrid2"])
+                if key and _f(r[col]):
+                    s = sub.setdefault(key, {})
+                    s[f"pop{year}"] = s.get(f"pop{year}", 0) + _f(r[col])
         nat = {k: sum(s.get("emp_sectors", {}).get(k, 0) for s in sub.values()) for k, _, _ in SECTORS}
         nat_emp = sum(s.get("emp") or 0 for s in sub.values())
         print(f"    {len(town_ua)} towns in {len(ua)} SHRUG urban areas; {len(sub)} sub-districts; EC13 employment "

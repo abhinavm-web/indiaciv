@@ -300,6 +300,15 @@ def build() -> None:
             if g:
                 ec_bad.add(g)
     ec_bad_states = {st for st, p_ in bad_sub_pop.items() if p_ > 0.2 * st_pop[st]}
+    subs_of = defaultdict(list)
+    for key, g in popd["subdistrict_district"].items():
+        subs_of[g].append(key)
+    SHRUG_2001_CHECK = 0.02
+    shrug_d01 = defaultdict(float)
+    for key, v in shrug["subdistricts"].items():
+        shrug_d01[key[:5]] += v.get("pop2001", 0)
+    shrug_ok_2011 = {d for d, v in shrug_d01.items()
+                     if (a02.get(d) or {}).get("2001") and abs(v / a02[d]["2001"] - 1) <= SHRUG_2001_CHECK}
     nat_emp, nat_sectors = shrug["national"]["emp"], shrug["national"]["emp_sectors"]
 
     def ec_unreliable(g):
@@ -447,9 +456,21 @@ def build() -> None:
         olds = made_of.get(g, set())
         exact = bool(olds) and all(dest[d] == {g} for d in olds)
         hist = history(olds) if exact else {}
+        shrug_growth = None
         if not exact and pop:
-            pending["district_growth"].append({"district": name, "state": smeta[m["state_fips"]]["name"],
-                                               "why": "its 2011 sub-districts came from a split 2011 district"})
+            # A part of a split 2011 district: growth on SHRUG's consistent areas (2001 and 2011 counts summed over
+            # the shrids of its 2011 sub-districts), where SHRUG's 2001 total for every 2011 district it draws on is
+            # within SHRUG_2001_CHECK of the census's own 2001 count for that district (table A-02).
+            p01 = sum(shrug["subdistricts"].get(kk, {}).get("pop2001", 0) for kk in subs_of[g])
+            p11 = sum(shrug["subdistricts"].get(kk, {}).get("pop2011", 0) for kk in subs_of[g])
+            checked = olds and all(d in shrug_ok_2011 for d in olds)
+            if checked and p01 and p11:
+                shrug_growth = round(p11 / p01 - 1, 4)
+            else:
+                pending["district_growth"].append({"district": name, "state": smeta[m["state_fips"]]["name"],
+                                                   "why": "its 2011 sub-districts came from a split 2011 district, "
+                                                   "and SHRUG's 2001 count for that district does not match the "
+                                                   "census's"})
         if pop and g not in ddp_of:
             pending["district_gdp"].append({"district": name, "state": smeta[m["state_fips"]]["name"],
                                             "why": ddp_combined.get(g) and "the state publishes it only for "
@@ -464,7 +485,10 @@ def build() -> None:
         trend = growth_of(history(olds)) if olds else None  # growth of the 2011 district(s) it came from
         county_rows.append({
             "_trend": trend, "_trend_exact": exact,
-            "growth": growth_of(hist), "pop2001": hist.get("2001"), "pop_series": hist or None,
+            "growth": growth_of(hist) if exact else shrug_growth,
+            "growth_source": ("Census table A-02" if exact else "SHRUG consistent areas (census 2001 and 2011)"
+                              if shrug_growth is not None else None),
+            "pop2001": hist.get("2001"), "pop_series": hist or None,
             "geoid": g, "name": name, "state": smeta[m["state_fips"]]["abbr"], "si": fips_index[m["state_fips"]],
             "population": pop, "households": tot.get("No_HH"), "land_km2": round(area, 1),
             "density": round(pop / area, 1) if pop and area else None,
@@ -473,7 +497,7 @@ def build() -> None:
             "farm_share": ratio(farm(tot), tot.get("TOT_WORK_P")),
             "parent_2011": (d.get("parent_2011") or {}).get("name"),
             "jobs": jobs(tot),
-            "nfhs": {f["key"]: f["value"] for f in nfhs["districts"].get(g, {}).get("facts", [])},
+            "nfhs": {f["key"]: f["value"] for f in nfhs["districts"].get(g, {}).get("facts", []) if not f.get("derived")},
             "nfhs_sheet": nfhs["districts"].get(g, {}).get("sheet"),
             "ec13_emp": round(ec_dist[g]["emp"]) if g in ec_dist and not ec_unreliable(g) else None,
             "ec13_per100": round(ec_dist[g]["emp"] / pop * 100, 1) if g in ec_dist and pop and not ec_unreliable(g)
@@ -554,10 +578,20 @@ def build() -> None:
                        {d for d in census["districts"] if d[:2] in old_states} <= olds)
         # Same territory as a 2011 state: its own A-02 row; otherwise the sum of its whole 2011 districts.
         s_hist = (a02.get(next(iter(old_states)), {}) if whole_state else history(olds) if s_exact else {})
-        if growth_of(s_hist) is None:
-            why = ("a 2011 district was split across its border with another state" if not s_exact else
-                   "a district formed between 2001 and 2011 has no 2001 figure in A-02")
-            pending["state_growth"].append({"state": m["name"], "why": why})
+        st_growth = growth_of(s_hist)
+        if st_growth is None:
+            # SHRUG's consistent areas over the state's 2011 sub-districts, if every 2011 district it draws on passes
+            # the same 2001 check as for districts.
+            keys = [kk for gg in mine for kk in subs_of[gg]]
+            p01 = sum(shrug["subdistricts"].get(kk, {}).get("pop2001", 0) for kk in keys)
+            p11 = sum(shrug["subdistricts"].get(kk, {}).get("pop2011", 0) for kk in keys)
+            if olds and all(d in shrug_ok_2011 for d in olds) and p01 and p11:
+                st_growth = round(p11 / p01 - 1, 4)
+            else:
+                why = ("a 2011 district was split across its border with another state" if not s_exact else
+                       "a district formed between 2001 and 2011 has no 2001 figure in A-02")
+                pending["state_growth"].append({"state": m["name"], "why": why + "; SHRUG's 2001 count does not "
+                                                "match the census's for all its 2011 districts"})
         v = (gsdp.get(fips) or {}).get(GDP_YEAR)
         gdp = round(v * LAKH) if v else None
         if gdp is None:
@@ -587,7 +621,7 @@ def build() -> None:
             "nsdp_per_capita": pc, "gdp_series": {y: round(x * LAKH) for y, x in sorted((gsdp.get(fips) or {}).items())
                                                    if x is not None},
             "urban": ratio(urb, pop), "literacy": literacy(tot), "households": tot.get("No_HH"),
-            "growth": growth_of(s_hist), "growth_years": [2001, 2011] if growth_of(s_hist) is not None else None,
+            "growth": st_growth, "growth_years": [2001, 2011] if st_growth is not None else None,
             "pop_series": s_hist or ({str(POP_YEAR): pop} if pop else {}),
             "ranks": {},
             "label": label_anchor(grid, owner, si, m["name"]),
@@ -829,7 +863,7 @@ def build() -> None:
                           "format": "int", "higher_is": None, "year": None, "derived": True, "method": EST_METHOD,
                           "source": "Derived from the census 2011 and the Technical Group's state projection"}]}
                          if k >= 0 and county_by_geoid.get(geoids[k], {}).get("pop_est") else {}),
-                      **({f"Its district ({nfhs['districts'][geoids[k]]['sheet'] or nfhs['districts'][geoids[k]].get('mpi_district')}) · NFHS-5 2019-21":
+                      **({f"Its district ({nfhs['districts'][geoids[k]]['sheet'] or nfhs['districts'][geoids[k]].get('mpi_district') or 'part of ' + nfhs['districts'][geoids[k]].get('inherited_from', '')}) · NFHS-5 2019-21":
                           nfhs["districts"][geoids[k]]["facts"]} if k >= 0 and geoids[k] in nfhs["districts"] else {})},
             "jobs": jobs(rec), "median_income": None, "median_rent": None, "home_value": None,
             "unemployment": None, "rent_burden": None,
@@ -1066,6 +1100,9 @@ def build() -> None:
          "across states. Blank where the state's figures are not wired in."),
         ("gdp_year", "GDP year", "text", None, "neutral", "state_ddp", "The year of the district GDP figure."),
         ("gdp_measure", "GDP measure", "text", None, "neutral", "state_ddp", "Gross or Net District Domestic Product."),
+        ("growth_source", "Growth source", "text", None, "neutral", "census_a02",
+         "Census table A-02 (districts made of whole 2011 districts), or SHRUG's consistent areas (parts of split "
+         "2011 districts)."),
         ("pop_est", f"Population {EST_YEAR} (derived estimate)", "int", None, "neutral", "pop_projections",
          EST_METHOD),
         ("ec13_emp", "Jobs in establishments (2013)", "int", None, "neutral", "shrug",

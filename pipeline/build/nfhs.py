@@ -117,10 +117,42 @@ def build() -> None:
         return None
 
     out, pending = {}, []
+    # A district created after 2017 has no fact sheet of its own. Its parent's, the 2017 district named like the
+    # 2011 district most of its people lived in, is attached as DERIVED (labelled, shown only beside the district's
+    # cities; never used in lenses or ranks): it describes the larger district it was part of in 2019-21.
+    by_title = defaultdict(list)
+    for i, d in enumerate(nf["districts"]):
+        by_title[d["state"]].append(i)
+    inherit = {}
+    for g in geoids:
+        if g in match or not parent[g]:
+            continue
+        a = norm(RENAMED.get(parent[g], parent[g]))
+        cands = sorted((sc, i) for i in by_title.get(cmeta[g]["state_fips"], [])
+                       if (sc := score(a, norm(nf["districts"][i]["title"] or ""))) is not None)
+        if cands:
+            inherit[g] = cands[0][1]
     for g in geoids:
         if g not in match:
-            pending.append({"district": names[g], "why": "no NFHS-5 fact sheet of that name in its state (created "
-                                                         "after 2017, or renamed)"})
+            pending.append({"district": names[g], "why": "no NFHS-5 fact sheet of its own (created after 2017, or "
+                                                         "renamed)" + ("; its parent district's sheet is shown "
+                                                         "beside its cities, marked derived" if g in inherit else "")})
+            if g in inherit:
+                d = nf["districts"][inherit[g]]
+                facts = []
+                for n, (key, label, hi, nat_prefix) in INDICATORS.items():
+                    v = d["values"].get(str(n))
+                    if v is None:
+                        continue
+                    nv = national(nat_prefix)
+                    facts.append({"key": key, "label": label, "value": round(v / 100, 4),
+                                  "national": round(nv / 100, 4) if nv is not None else None, "format": "pct",
+                                  "higher_is": hi, "year": "2019-21", "derived": True,
+                                  "method": f"Not surveyed separately: NFHS-5 (2019-21) figures of {d['title']}, the "
+                                            "district it was part of then (matched through the 2011 district most "
+                                            "of its people lived in).",
+                                  "source": f"NFHS-5 district fact sheet: {d['title']} (parent district)"})
+                out[g] = {"sheet": None, "match": None, "facts": facts, "inherited_from": d["title"]}
             continue
         i, s = match[g]
         d = nf["districts"][i]

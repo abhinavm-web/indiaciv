@@ -31,7 +31,9 @@ async function loadJSON(name, optional = false) {
     throw new Error(`data/${name}.json is not in this build`);
   }
   try {
-    const r = await fetch(`data/${name}.json`);
+    // Revalidate with the server each load (a 304 when unchanged), so a new deploy's data is seen at once rather than
+    // after GitHub Pages' 10-minute browser cache.
+    const r = await fetch(`data/${name}.json`, { cache: "no-cache" });
     if (!r.ok) throw new Error(`data/${name}.json: HTTP ${r.status}`);
     return await r.json();
   } catch (err) {

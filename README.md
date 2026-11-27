@@ -73,6 +73,7 @@ has been found, the value is `null` (shown as "–") and listed on the Almanac's
 | [OurAirports](https://ourairports.com/countries/IN/) | Airports | Download |
 | [Wikidata](https://www.wikidata.org/) | World Heritage, national parks, universities, capitals | SPARQL at build time (paced for rate limits) |
 | [USGS ComCat](https://earthquake.usgs.gov/earthquakes/search/) | Earthquakes | Event web service at build time |
+| [Global Energy Monitor](https://globalenergymonitor.org/) Global Coal Mine Tracker (May 2026) and Global Iron Ore Mines Tracker | Operating coal and iron ore mines: location, owner, capacity | CC BY 4.0; public asset API at build time |
 
 ## Pending (v1)
 
@@ -81,7 +82,7 @@ See the Almanac's *Pending data* page for the live list. The main gaps:
 - District and city GDP; population after 2011 (the next census has not published results); growth for cities, for
   districts carved from split 2011 districts, and for Andhra Pradesh, Telangana and Jammu and Kashmir.
 - City-level jobs, incomes and rents (usaciv's City View and Advisors are off until Indian sources are wired in).
-- Mines and oil and gas fields with coordinates.
+- Oil and gas fields, and mines other than coal and iron ore.
 - Five districts with no 2011 census area (Mirpur and Muzaffarabad in Pakistan-administered Kashmir; three new
   districts drawn from sub-districts that straddle older ones).
 

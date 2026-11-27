@@ -117,7 +117,8 @@ export function initPedia(data) {
       const cats = [...new Set(r.types.map((t) => t.category || "other"))];
       return `
       ${h2("resources", "⛏️", "Resources")}
-      <p>Resources mark power plants, mines and oil &amp; gas fields on the tiles where they are. What each type
+      <p>Resources mark power plants and coal and iron ore mines on the tiles where they are (oil &amp; gas fields and
+      other minerals are still pending). What each type
       includes is in its description (nuclear plants are left out of this map). When zoomed out, a hex shows its
       highest-ranked resource; zoom in to see more. Press <b>R</b> to show or hide them.</p>
       ${cats.map((c) => `<h4>${esc(CATEGORY[c] || c)}</h4><table class="res-table">

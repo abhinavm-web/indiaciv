@@ -595,6 +595,9 @@ def check_resources(r: Report, doc, ctx: dict | None, source_ids: set | None, ci
         r.ok(f"resources.json: {len(types)} types, {len(doc['items'])} items ({_sample(f'{k} {v}' for k, v in per.most_common())})")
 
 
+ADDITIVE_UNITS = {"MW", "tons/yr"}  # capacities add up; play areas and staff counts do not
+
+
 def _check_resource_summary(r: Report, summary, types: dict, items: list) -> None:
     """summary.national/states recomputed from the items: counts and value sums must match."""
     if not need_keys(r, "resources.json summary", summary, ["note", "national", "states"]):
@@ -612,7 +615,7 @@ def _check_resource_summary(r: Report, summary, types: dict, items: list) -> Non
             return f"{what}: needs count, value, unit"
         if got["count"] != want[0] or (types.get(t) and got["unit"] != types[t]["unit"]):
             return f"{what}: count/unit {got['count']}/{got['unit']!r} do not match the items ({want[0]})"
-        if t in NOT_ADDITIVE or (types.get(t) and types[t]["unit"] != "MW"):
+        if t in NOT_ADDITIVE or (types.get(t) and types[t]["unit"] not in ADDITIVE_UNITS):
             return None if got["value"] is None else f"{what}: value must be null (play areas are not additive)"
         if not is_num(got["value"]) or abs(got["value"] - want[1]) > 1:
             return f"{what}: value {got['value']!r} != sum of item values {round(want[1])}"

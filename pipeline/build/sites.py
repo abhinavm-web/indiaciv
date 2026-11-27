@@ -1,14 +1,16 @@
 """Resources (power plants, mines, oil and gas fields) and wonders (World Heritage, national parks, universities).
 
 Every site is placed on the Indian land hex at its point, or the nearest one within 2 hexes (island and coastal
-sites). Nuclear plants are left out of this map. Mines and oil and gas fields are pending: no systematic open source
-with coordinates has been wired in yet, and nothing is listed by hand.
+sites). Nuclear plants are left out of this map. Coal and iron ore mines are Global Energy Monitor's operating mines,
+at GEM's own coordinates, with GEM's capacity figure (tonnes a year) where GEM has one. Oil and gas fields and other
+minerals are pending: no systematic open source with coordinates has been wired in yet, and nothing is listed by hand.
 """
 
 from __future__ import annotations
 
 import json
 import math
+import re
 from collections import defaultdict
 
 from ..core.geo import MapProjection
@@ -17,7 +19,7 @@ from ..core.paths import WEB_DATA
 from ..core.store import load_interim, write_web
 from .economy import EXCLUDED_FUELS, land_cell, whs_properties
 
-REQUIRES = ["_world", "india_boundaries", "wikidata_sites", "wri_power_plants", "counties.json", "cities.json"]
+REQUIRES = ["_world", "india_boundaries", "wikidata_sites", "wri_power_plants", "gem_mines", "counties.json", "cities.json"]
 PRODUCES = ["resources.json", "wonders.json"]
 
 
@@ -43,7 +45,14 @@ PLANT_TYPES = {
                 "Every solar farm in the WRI Global Power Plant Database (2021).", "wri_power_plants"),
 }
 FIELD_TYPES: list = []  # pending (see module docstring)
-MINE_TYPES: dict = {}
+MINE_TYPES = {
+    "coal": _t("coal_mine", "Coal mine", "mineral", "⛏️", "r-coal_mine", "#3b3430", "tons/yr",
+               "Every operating coal mine in Global Energy Monitor's Global Coal Mine Tracker, with its capacity in "
+               "tonnes a year where GEM records one.", "gem_mines"),
+    "iron": _t("iron_mine", "Iron ore mine", "mineral", "⛏️", "r-iron", "#9a4a32", "tons/yr",
+               "Every operating iron ore mine in Global Energy Monitor's Global Iron Ore Mines Tracker, with its "
+               "design capacity in tonnes a year where GEM records one.", "gem_mines"),
+}
 
 
 class Placer:
@@ -69,7 +78,25 @@ class Placer:
                 "cbsa": self.cbsa_of.get(geoid), "state": self.abbrs[self.owner[cell]]}
 
 
-def resources(place, sites, plants):
+def mine_items(place, mines):
+    items = []
+    for kind, t in MINE_TYPES.items():
+        for m in sorted(mines[kind], key=lambda m: -(m["tons"] or 0)):
+            if m["status"] != "operating":
+                continue
+            at = place(m["lon"], m["lat"])
+            if not at:
+                continue
+            owner = re.sub(r"\s*\[100(\.0)?%\]", "", m.get("owner") or "") or None
+            bits = [m.get("type") and f"{m['type'].lower()} mine", m.get("coalfield") and f"{m['coalfield']} coalfield",
+                    owner,
+                    m.get("accuracy") and m["accuracy"].lower() != "exact" and "approximate location"]
+            items.append({"type": t["id"], "name": m["name"], "value": m["tons"],
+                          "detail": ", ".join(b for b in bits if b) or None, **at})
+    return items
+
+
+def resources(place, sites, plants, mines):
     items = []
     for p in sorted(plants, key=lambda p: -(p["mw"] or 0)):
         t = PLANT_TYPES.get(p["fuel"])
@@ -80,6 +107,7 @@ def resources(place, sites, plants):
             yr = f", online {int(p['year'])}" if p["year"] else ""
             items.append({"type": t["id"], "name": p["name"], "value": round(p["mw"]) if p["mw"] else None,
                           "detail": f"{p['fuel']}{yr}" + (f", {p['owner']}" if p["owner"] else ""), **at})
+    items += mine_items(place, mines)
     types = list(PLANT_TYPES.values()) + FIELD_TYPES + list(MINE_TYPES.values())
     present = {i["type"] for i in items}
     types = [t for t in types if t["id"] in present]
@@ -91,15 +119,16 @@ def resources(place, sites, plants):
     for t in types:
         its = [i for i in items if i["type"] == t["id"]]
         vals = [i["value"] for i in its if i["value"] is not None]
-        national[t["id"]] = {"count": len(its), "value": sum(vals) if t["unit"] == "MW" else None, "unit": t["unit"]}
+        national[t["id"]] = {"count": len(its), "value": sum(vals), "unit": t["unit"]}
         for i in its:
-            s = states[i["state"]].setdefault(t["id"], {"count": 0, "value": 0 if t["unit"] == "MW" else None,
-                                                        "unit": t["unit"]})
+            s = states[i["state"]].setdefault(t["id"], {"count": 0, "value": 0, "unit": t["unit"]})
             s["count"] += 1
-            if t["unit"] == "MW" and i["value"]:
+            if i["value"]:
                 s["value"] += i["value"]
     summary = {"note": "Totals of the mapped sites only. Power plants are the WRI database (2021) without nuclear. "
-                       "Mines and oil and gas fields are pending.",
+                       "Mines are Global Energy Monitor's operating coal and iron ore mines; tonnes a year are "
+                       "summed over the mines GEM gives a capacity for. Oil and gas fields and other minerals are "
+                       "pending.",
                "national": national, "states": dict(states)}
     return {"types": types, "items": items, "summary": summary}
 
@@ -154,8 +183,9 @@ def build() -> None:
     world = load_interim("_world")
     sites = load_interim("wikidata_sites")
     plants = load_interim("wri_power_plants")["plants"]
+    mines = load_interim("gem_mines")
     place = Placer(world)
-    res = resources(place, sites, plants)
+    res = resources(place, sites, plants, mines)
     won = wonders(place, sites)
     write_web("resources.json", res)
     write_web("wonders.json", won)

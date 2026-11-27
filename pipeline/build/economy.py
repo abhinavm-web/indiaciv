@@ -795,6 +795,9 @@ def build() -> None:
         {"what": "City population growth", "why": "the census publishes 2001 figures for towns, not for 2011 "
                                                    "urban agglomerations as a series; not yet wired in"},
         {"what": "Population after 2011", "why": "the next census has not published results"},
+        {"what": "Oil and gas fields", "why": "no open, systematic field list with coordinates found yet"},
+        {"what": "Mines other than coal and iron ore (bauxite, limestone, copper, zinc and others)",
+         "why": "the Indian Bureau of Mines publishes lease lists by state without coordinates; not yet wired in"},
     ]
     pending["district_nfhs"] = nfhs["pending"]
     pending["boundaries"] = [{"what": "\"Nazul\" (Delhi)", "why": "the boundary file's name for an outline holding the "

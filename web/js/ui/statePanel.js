@@ -1,7 +1,7 @@
 import { css } from "../color.js";
 import { esc, popShort } from "../format.js";
 import { isCapital } from "../world.js";
-import { yieldGrid, amenities, industries, gdpRow, popLine, growthSpan, showPanel } from "./infoPanel.js";
+import { yieldGrid, amenities, industries, gdpRow, popLine, growthSpan, showPanel, factSections } from "./infoPanel.js";
 
 /**
  * Opens the panel for state `idx` (index into world.json states / states.json).
@@ -40,8 +40,9 @@ export function openStatePanel(idx, ctx) {
     headExtra: hasEcon ? popLine(st, growthSpan(st, n)) : "",
     sections: [
       st.yields && { title: "Yields · rank among states", html: `<div class="yield-grid">${yieldGrid(nation, st.yields, st.ranks, count)}</div>` },
-      hasEcon && { title: "Economy", html: (["unemployment", "median_income", "home_value"].some((k) => st[k] != null) ? amenities(st, n) : "") + gdpRow(st) },
-      st.jobs && Object.keys(st.jobs).length && { title: "Top industries · where people work", html: industries(st, nation, 8) },
+      hasEcon && { title: "Economy", html: (["unemployment", "median_income", "home_value"].some((k) => st[k] != null) ? amenities(st, n) : "") + (gdpRow(st) || `<p class="muted">GDP: Pending (no ${esc(st.gdp_year || "")} GSDP published for this state or UT).</p>`) },
+      ...factSections(st),
+      st.jobs && Object.keys(st.jobs).length && { title: "Workers · Census 2011", html: industries(st, nation, 8) },
       { title: "Biggest cities", html: cityRows },
       !hasEcon && { title: "Data", html: `<p class="muted">State statistics are not in this data build (states.json is missing).</p>` },
     ],

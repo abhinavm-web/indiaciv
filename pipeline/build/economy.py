@@ -26,8 +26,8 @@ from ..core.store import load_interim, save_interim, write_web
 from .labels import label_anchor
 from .yields import HEX_AREA_KM2, YIELD_KEYS, YIELDS
 
-REQUIRES = ["_world", "_population", "india_boundaries", "census2011", "rbi_states", "geonames", "wikidata_sites",
-            "wri_power_plants"]
+REQUIRES = ["_world", "_population", "india_boundaries", "census2011", "census_a02", "rbi_states", "geonames",
+            "wikidata_sites", "wri_power_plants"]
 PRODUCES = ["cities.json", "states.json", "nation.json", "counties.json", "_economy", "_pending"]
 
 POP_YEAR = 2011
@@ -101,6 +101,106 @@ def literacy(rec):
     return ratio(lit, p - p6) if None not in (p, p6, lit) and p > p6 else None
 
 
+JOB_KEYS = {  # census 2011 worker categories (main + marginal workers)
+    "cultivators": ("Cultivators", ["MAIN_CL_P", "MARG_CL_P"]),
+    "agri_labourers": ("Agricultural labourers", ["MAIN_AL_P", "MARG_AL_P"]),
+    "household_industry": ("Household industry", ["MAIN_HH_P", "MARG_HH_P"]),
+    "other_workers": ("Other work (industry, trade, services, government)", ["MAIN_OT_P", "MARG_OT_P"]),
+}
+CENSUS_SRC = "Census 2011, Primary Census Abstract"
+
+
+def jobs(rec):
+    out = {}
+    for k, (_, cols) in JOB_KEYS.items():
+        vals = [rec.get(c) for c in cols]
+        if any(v is not None for v in vals):
+            out[k] = sum(v or 0 for v in vals)
+    return out
+
+
+def people_facts(rec, nat, urban=None, nat_urban=None):
+    """Census 2011 facts for one area, each with the national value for comparison."""
+    def f(rec):
+        p, m, fe = rec.get("TOT_P"), rec.get("TOT_M"), rec.get("TOT_F")
+        hh = rec.get("No_HH")
+        return {"literacy": literacy(rec), "sex_ratio": round(fe / m * 1000) if fe and m else None,
+                "child_share": ratio(rec.get("P_06"), p), "work_participation": ratio(rec.get("TOT_WORK_P"), p),
+                "household_size": round(p / hh, 1) if p and hh else None}
+    a, b = f(rec), f(nat)
+    rows = [
+        ("literacy", "Literacy (age 7+)", "pct", "good"),
+        ("sex_ratio", "Sex ratio (females per 1,000 males)", "int", "neutral"),
+        ("child_share", "Children aged 0-6", "pct", "neutral"),
+        ("work_participation", "Work participation", "pct", "neutral"),
+        ("household_size", "People per household", "float", "neutral"),
+    ]
+    out = [{"key": k, "label": lab, "value": a[k], "national": b[k], "format": fmt, "higher_is": hi, "year": "2011",
+            "source": CENSUS_SRC} for k, lab, fmt, hi in rows if a[k] is not None]
+    if urban is not None:
+        out.insert(1, {"key": "urban", "label": "Living in towns", "value": urban, "national": nat_urban,
+                       "format": "pct", "higher_is": "neutral", "year": "2011", "source": CENSUS_SRC})
+    return out
+
+
+RBI_SRC = "RBI Handbook of Statistics on Indian States"
+# key, table, column filter, label, format, scale, higher_is, source note
+INDICATORS = [
+    ("unemployment_rural", "unemployment_rural", "Rural Overall", "Unemployment, rural", "pct", 1e-3, "bad",
+     "PLFS, usual status (adjusted)"),
+    ("unemployment_urban", "unemployment_urban", "Urban Overall", "Unemployment, urban", "pct", 1e-3, "bad",
+     "PLFS, usual status (adjusted)"),
+    ("mpi_headcount", "mpi", "NFHS-5 (2019-21) | Headcount", "Multidimensional poverty (headcount)", "pct", 1e-2,
+     "bad", "NITI Aayog MPI from NFHS-5"),
+    ("life_expectancy", "life_expectancy", "| Total", "Life expectancy at birth", "years", 1, "good", "SRS"),
+    ("imr", "imr", "", "Infant mortality (per 1,000 live births)", "float", 1, "bad", "SRS"),
+    ("sdg_score", "sdg_score", "", "SDG India Index score (0-100)", "int", 1, "good", "NITI Aayog"),
+    ("forest_cover", "forest_cover", "", "Forest cover", "km2", 1, "neutral", "Forest Survey of India"),
+    ("tourist_visits", "tourist_visits", "", "Domestic tourist visits", "int", 1e6, "neutral", "Ministry of Tourism"),
+    ("installed_power", "installed_power", "", "Installed power capacity", "mw", 1, "neutral", "CEA"),
+    ("power_per_capita", "power_per_capita", "", "Power available per person (kWh / year)", "int", 1, "good", "CEA"),
+]
+
+
+def latest(series: dict, filt: str):
+    """(label, value) of the last column whose label contains `filt` and has a value."""
+    for lab in reversed(list(series)):
+        if filt in lab and series[lab] is not None:
+            return lab, series[lab]
+    return None, None
+
+
+def state_indicators(rbi, fips):
+    out = []
+    for key, table, filt, label, fmt, scale, hi, note in INDICATORS:
+        t = rbi.get(table, {})
+        lab, v = latest(t.get(fips, {}), filt)
+        if v is None:
+            continue
+        nat = t.get("IN", {}).get(lab) if fmt not in ("km2", "mw") and key != "tourist_visits" else None
+        m = re.findall(r"\d{4}(?:-\d{2,4})?", lab)
+        year = m[-1] if m else lab
+        out.append({"key": key, "label": label, "value": round(v * scale, 6), "national": round(nat * scale, 6)
+                    if nat is not None else None, "format": fmt, "higher_is": hi, "year": year,
+                    "source": f"{RBI_SRC} ({note})"})
+    return out
+
+
+def sector_facts(rbi, fips, gdp):
+    if not gdp:
+        return []
+    rows = [("gsva_agriculture", "Agriculture, forestry & fishing"), ("gsva_industry", "Industry (incl. mining, "
+            "power, construction)"), ("gsva_manufacturing", "  of which manufacturing"), ("gsva_services", "Services")]
+    out = []
+    for key, label in rows:
+        v = (rbi[key].get(fips) or {}).get(GDP_YEAR)
+        if v is not None:
+            out.append({"key": key, "label": label, "value": round(v * LAKH / gdp, 4), "national": None,
+                        "format": "pct", "higher_is": "neutral", "year": GDP_YEAR,
+                        "source": f"{RBI_SRC} (NSO, gross state value added ÷ GSDP)"})
+    return out
+
+
 SUFFIX = re.compile(r"\s*\((?:[^)]*)\)\s*|\s+UA$|\s+U\.A\.$|\+OG|\s+Part$", re.I)
 
 
@@ -142,6 +242,33 @@ def build() -> None:
     gindex = {g: k for k, g in enumerate(geoids)}
     cmeta = {c["geoid"]: c for c in bounds["counties"]}
     pending = defaultdict(list)
+    a02 = load_interim("census_a02")["series"]
+    # Growth 2001-2011 and the 1901-2011 series, exact only where an area is made of whole 2011 districts:
+    # dest[2011 district] = today's districts its sub-districts went to.
+    dest = defaultdict(set)
+    for key, g in popd["subdistrict_district"].items():
+        dest[key[:5]].add(g)
+    made_of = defaultdict(set)  # today's district -> 2011 districts that contributed
+    for d, gs in dest.items():
+        for g in gs:
+            made_of[g].add(d)
+
+    def history(old_districts):
+        """Summed A-02 series for whole 2011 districts; None if any is missing a year (that year is dropped)."""
+        years = sorted({y for d in old_districts for y in a02.get(d, {})})
+        out = {}
+        for y in years:
+            vals = [a02.get(d, {}).get(y) for d in old_districts]
+            if all(v is not None for v in vals):
+                out[y] = sum(vals)
+        return out
+
+    def growth_of(series):
+        a, b = series.get("2001"), series.get("2011")
+        return round(b / a - 1, 4) if a and b else None
+
+    nat_rec = census["nation"]["total"]
+    nat_urban = ratio(census["nation"]["urban"]["TOT_P"], nat_rec["TOT_P"])
 
     # ---- per-cell point yields (Production, Science, Culture) -----------------------------------------------------
     n = grid.size
@@ -195,7 +322,14 @@ def build() -> None:
             xs = [proj(lon, lat) for ring in m["rings"] for lon, lat in ring]
             if xs:
                 rep = land_cell(grid, owner, sum(x for x, _ in xs) / len(xs), sum(y for _, y in xs) / len(xs))
+        olds = made_of.get(g, set())
+        exact = bool(olds) and all(dest[d] == {g} for d in olds)
+        hist = history(olds) if exact else {}
+        if not exact and pop:
+            pending["district_growth"].append({"district": name, "state": smeta[m["state_fips"]]["name"],
+                                               "why": "its 2011 sub-districts came from a split 2011 district"})
         county_rows.append({
+            "growth": growth_of(hist), "pop2001": hist.get("2001"), "pop_series": hist or None,
             "geoid": g, "name": name, "state": smeta[m["state_fips"]]["abbr"], "si": fips_index[m["state_fips"]],
             "population": pop, "households": tot.get("No_HH"), "land_km2": round(area, 1),
             "density": round(pop / area, 1) if pop and area else None,
@@ -203,6 +337,7 @@ def build() -> None:
             "workers": tot.get("TOT_WORK_P"), "farm_workers": farm(tot),
             "farm_share": ratio(farm(tot), tot.get("TOT_WORK_P")),
             "parent_2011": (d.get("parent_2011") or {}).get("name"),
+            "jobs": jobs(tot),
             "gdp": None,
             "land": {kk: (round(sum(pct[kk][c] for c in land_cells) / len(land_cells) / 100, 4) if land_cells else None)
                      for kk in PCT_KEYS},
@@ -230,6 +365,18 @@ def build() -> None:
                 tot[c] += v
             urb += popd["districts"][g]["urban"].get("TOT_P") or 0
         pop = tot.get("TOT_P") or None
+        mine = {r["geoid"] for r in rows}
+        olds = set().union(*(made_of.get(gg, set()) for gg in mine)) if mine else set()
+        s_exact = bool(olds) and all(dest[d] <= mine for d in olds)
+        old_states = {d[:2] for d in olds}
+        whole_state = (s_exact and len(old_states) == 1 and
+                       {d for d in census["districts"] if d[:2] in old_states} <= olds)
+        # Same territory as a 2011 state: its own A-02 row; otherwise the sum of its whole 2011 districts.
+        s_hist = (a02.get(next(iter(old_states)), {}) if whole_state else history(olds) if s_exact else {})
+        if growth_of(s_hist) is None:
+            why = ("a 2011 district was split across its border with another state" if not s_exact else
+                   "a district formed between 2001 and 2011 has no 2001 figure in A-02")
+            pending["state_growth"].append({"state": m["name"], "why": why})
         v = (gsdp.get(fips) or {}).get(GDP_YEAR)
         gdp = round(v * LAKH) if v else None
         if gdp is None:
@@ -244,13 +391,17 @@ def build() -> None:
             "fips": fips, "abbr": m["abbr"], "iso": m["iso"], "name": m["name"], "wikidata": None,
             "population": pop, "employed": tot.get("TOT_WORK_P"),
             "yields": {**ys, "food": farm(tot), "gold": gdp},
-            "jobs": {}, "median_income": None, "median_rent": None, "home_value": None,
+            "jobs": jobs(tot), "median_income": None, "median_rent": None, "home_value": None,
             "unemployment": None, "rent_burden": None,
+            "facts": {"People · Census 2011": people_facts(tot, nat_rec, ratio(urb, pop), nat_urban),
+                      "Development · latest published": state_indicators(rbi, fips),
+                      f"Economy by sector · {GDP_YEAR}": sector_facts(rbi, fips, gdp)},
             "gdp": gdp, "gdp_year": GDP_YEAR, "gdp_by_sector": sectors or None,
             "nsdp_per_capita": pc, "gdp_series": {y: round(x * LAKH) for y, x in sorted((gsdp.get(fips) or {}).items())
                                                    if x is not None},
             "urban": ratio(urb, pop), "literacy": literacy(tot), "households": tot.get("No_HH"),
-            "growth": None, "growth_years": None, "pop_series": {str(POP_YEAR): pop} if pop else {},
+            "growth": growth_of(s_hist), "growth_years": [2001, 2011] if growth_of(s_hist) is not None else None,
+            "pop_series": s_hist or ({str(POP_YEAR): pop} if pop else {}),
             "ranks": {},
             "label": label_anchor(grid, owner, si, m["name"]),
             "land": ({k: round(sum(pct[k][c] for c in land_cells) / len(land_cells) / 100, 3) for k in PCT_KEYS}
@@ -436,7 +587,8 @@ def build() -> None:
             "population": rec["TOT_P"], "population_year": POP_YEAR, "employed": rec.get("TOT_WORK_P"),
             "households": rec.get("No_HH"), "literacy": literacy(rec),
             "yields": {**ys, "food": farm(rec), "gold": None},
-            "jobs": {}, "median_income": None, "median_rent": None, "home_value": None,
+            "facts": {"People · Census 2011": people_facts(rec, nat_rec)},
+            "jobs": jobs(rec), "median_income": None, "median_rent": None, "home_value": None,
             "unemployment": None, "rent_burden": None,
             "gdp": None, "gdp_year": None, "gdp_by_industry": None, "gdp_undisclosed": None, "gdp_estimated": None,
             "growth": None, "growth_years": None,
@@ -525,18 +677,20 @@ def build() -> None:
         "vintage": f"Census {POP_YEAR}", "year": POP_YEAR,
         "gdp_vintage": f"Sum of state GDP {GDP_YEAR} ({len(with_gdp)} of {len(states)} states and UTs; RBI handbook)",
         "nation": {
-            "population": nat["TOT_P"], "employed": nat.get("TOT_WORK_P"),
+            "population": nat["TOT_P"], "employed": nat.get("TOT_WORK_P"), "jobs": jobs(nat),
             "yields": {"food": farm(nat), "gold": nat_gdp,
                        **{k: round(sum(s["yields"][k] for s in states), 1) for k in ("production", "science",
                                                                                      "culture")}},
             "jobs": {}, "median_income": None, "median_rent": None, "home_value": None,
             "unemployment": None, "rent_burden": None,
             "gdp": nat_gdp, "gdp_year": GDP_YEAR, "gdp_by_industry": None, "gdp_undisclosed": None,
-            "gdp_estimated": None, "growth": None, "growth_years": None,
+            "gdp_estimated": None, "growth": growth_of(a02.get("IN", {})), "growth_years": [2001, 2011],
+            "pop_series": a02.get("IN"),
             "urban": ratio(census["nation"]["urban"]["TOT_P"], nat["TOT_P"]), "literacy": literacy(nat),
         },
         "yields": YIELDS,
-        "industries": {},
+        "industries": {k: v[0] for k, v in JOB_KEYS.items()},
+        "jobs_source": "Census 2011 workers (main + marginal), by the census's four categories",
         "country": "India",
         "currency": "INR",
     }
@@ -553,6 +707,8 @@ def build() -> None:
         ("land_km2", "Area", "km2", "km²", "neutral", "india_boundaries",
          "Area of the district outline (equal-area projection)."),
         ("density", "Density", "float", "people / km²", "neutral", "census2011", "2011 population ÷ area."),
+        ("growth", "Growth 2001–2011", "pct", None, "good", "census_a02",
+         "Census A-02, for districts made of whole 2011 districts; Pending where a 2011 district was split."),
         ("urban", "Urban", "pct", None, "neutral", "census2011", "Share of the 2011 population in towns."),
         ("literacy", "Literacy", "pct", None, "good", "census2011",
          "Literates ÷ population aged 7 and over (2011 census)."),
@@ -584,7 +740,8 @@ def build() -> None:
 
     pending["always"] = [
         {"what": "District and city GDP", "why": "no comparable official series is published"},
-        {"what": "Population growth", "why": "the 2001 census tables are not yet wired in"},
+        {"what": "City population growth", "why": "the census publishes 2001 figures for towns, not for 2011 "
+                                                   "urban agglomerations as a series; not yet wired in"},
         {"what": "Population after 2011", "why": "the next census has not published results"},
     ]
     if no_cap:
@@ -602,7 +759,7 @@ def build() -> None:
         "county_urban": [r["urban"] for r in county_rows],
         "county_literacy": [r["literacy"] for r in county_rows],
         "county_farm_share": [r["farm_share"] for r in county_rows],
-        "county_growth": [None for _ in county_rows],
+        "county_growth": [r["growth"] for r in county_rows],
         "cell_county": cell_county,
         "whs": [[s["name"] for s in g] for g in whs_groups],
     })

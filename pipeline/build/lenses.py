@@ -94,6 +94,7 @@ def build() -> None:
         return out
 
     density = spread(density_c, False)
+    growth = spread(eco["county_growth"], True)
     urban = spread(eco["county_urban"], True)
     lit = spread(eco["county_literacy"], True)
     farm = spread(eco["county_farm_share"], True)
@@ -101,6 +102,26 @@ def build() -> None:
     for i, o in enumerate(owner):
         if o >= 0:
             pc[i] = states[o].get("nsdp_per_capita")
+
+    def state_fact(key):
+        vals = []
+        for o in owner:
+            v = None
+            if o >= 0:
+                for lst in (states[o].get("facts") or {}).values():
+                    for f in lst:
+                        if f["key"] == key:
+                            v = f["value"]
+            vals.append(v)
+        return vals
+
+    def fact_year(key):
+        for st in states:
+            for lst in (st.get("facts") or {}).values():
+                for f in lst:
+                    if f["key"] == key:
+                        return f["year"]
+        return ""
 
     # Earthquakes within QUAKE_RADIUS_KM of the hex centre.
     qxy = [(*proj(q["lon"], q["lat"]), q["mag"]) for q in quakes]
@@ -124,6 +145,16 @@ def build() -> None:
             "description": "Residents per km² at the 2011 census: each district's population over its area, "
             "averaged over the districts the hex covers.",
             "values": density,
+        },
+        {
+            "id": "growth", "group": "people", "name": "Growth 2001–2011", "icon": "l-growth", "emoji": "📈",
+            "unit": "population change", "format": "pct", "scale": "linear",
+            "ramp": ["#8e2a2a", "#c96a4a", "#e8c9a0", "#a9cf8a", "#4f9a4a", "#1f5f2a"], "higher_is": "good",
+            "source": "census_a02",
+            "description": "Population change from the 2001 to the 2011 census (Table A-02, on 2011 boundaries), per "
+            "district. Blank where today's district was carved out of a 2011 district that was split, because the "
+            "2001 count for its part is not published.",
+            "values": growth,
         },
         {
             "id": "urban", "group": "people", "name": "Urban", "icon": "l-developed", "emoji": "🏙️",
@@ -159,6 +190,36 @@ def build() -> None:
             "RBI handbook). Blank for states that have not published it.",
             "note": "State-wide values: every hex of a state has the same colour.",
             "values": pc,
+        },
+        {
+            "id": "poverty", "group": "prosperity", "name": "Poverty", "icon": "l-income", "emoji": "📉",
+            "unit": f"multidimensionally poor ({fact_year('mpi_headcount')})", "format": "pct", "scale": "linear",
+            "ramp": ["#fff1b0", "#e8c95a", "#c5862a", "#8f4a14", "#5a240a", "#2a0e05"], "higher_is": "bad",
+            "source": "rbi_states",
+            "description": "Share of people who are multidimensionally poor (NITI Aayog's national MPI from NFHS-5, "
+            "as published in the RBI handbook), by state.",
+            "note": "State-wide values: every hex of a state has the same colour.",
+            "values": state_fact("mpi_headcount"),
+        },
+        {
+            "id": "unemployment", "group": "prosperity", "name": "Urban unemployment", "icon": "unemployment",
+            "emoji": "😐", "unit": f"urban unemployment rate ({fact_year('unemployment_urban')})", "format": "pct",
+            "scale": "linear", "ramp": ["#10241a", "#1f4a33", "#3f7a4f", "#c9a45c", "#d9703a", "#ff5a3a"],
+            "higher_is": "bad", "source": "rbi_states",
+            "description": "Unemployment rate in towns and cities, usual status (adjusted), from the Periodic Labour "
+            "Force Survey as published in the RBI handbook, by state.",
+            "note": "State-wide values: every hex of a state has the same colour.",
+            "values": state_fact("unemployment_urban"),
+        },
+        {
+            "id": "life", "group": "people", "name": "Life expectancy", "icon": "l-people", "emoji": "❤️",
+            "unit": f"years at birth ({fact_year('life_expectancy')})", "format": "float", "scale": "linear",
+            "ramp": ["#2a0e14", "#5a1a2a", "#8f2f45", "#c25a6a", "#e89aa0", "#ffe0dc"], "higher_is": "good",
+            "source": "rbi_states",
+            "description": "Life expectancy at birth from the Sample Registration System (RBI handbook), by state. "
+            "Published for the larger states only; the others are blank.",
+            "note": "State-wide values: every hex of a state has the same colour.",
+            "values": state_fact("life_expectancy"),
         },
         {
             "id": "quakes", "group": "hazards", "name": "Earthquakes", "icon": "l-disasters", "emoji": "🌋",

@@ -35,8 +35,16 @@ has been found, the value is `null` (shown as "–") and listed on the Almanac's
   - **Food** is farm workers: cultivators + agricultural labourers, main and marginal (Census 2011).
   - **Production** is power-plant capacity in MW (WRI Global Power Plant Database, 2021; nuclear left out).
   - **Science** counts prominent universities, **Culture** UNESCO World Heritage properties (Wikidata).
-- **Lenses.** Population density, urban share, literacy, farm-worker share (all Census 2011, by district), income per
-  person (per-capita NSDP 2022-23, by state), earthquakes since 1900 (USGS), forest, farmland, built-up land.
+- **Panels.** Every city, state and the nation carry Census 2011 people facts (literacy, sex ratio, children 0-6, work
+  participation, household size, urban share) and workers by the census's four categories (cultivators,
+  agricultural labourers, household industry, other work), compared with India. States add the latest published
+  development indicators from the RBI handbook (rural and urban unemployment, multidimensional poverty, life
+  expectancy, infant mortality, SDG India Index, forest cover, tourist visits, installed power, power per person)
+  and GDP by sector.
+- **Growth 2001-2011** from Census Table A-02 (with the 1901-2011 series): exact for the nation, states and today's
+  districts made of whole 2011 districts; Pending where a 2011 district was split.
+- **Lenses.** Population density, growth, urban share, literacy, life expectancy, farm-worker share, poverty, urban
+  unemployment, income per person, earthquakes since 1900 (USGS), forest, farmland, built-up land.
 - **Resources and wonders.** Coal, gas, oil, hydro, wind, solar and biomass power plants (WRI); World Heritage sites,
   national parks and universities (Wikidata); Natural Earth roads, rail and ports; OurAirports airports with
   scheduled service.
@@ -47,8 +55,9 @@ has been found, the value is `null` (shown as "–") and listed on the Almanac's
 |---|---|---|
 | [Census of India 2011, Primary Census Abstract](https://censusindia.gov.in/nada/index.php/catalog/42559) (ORGI) | Population, households, literacy, workers, cities | Download (xlsx) |
 | [PCA Urban Agglomerations 2011](https://censusindia.gov.in/nada/index.php/catalog/45261) (ORGI) | Cities | Download (xlsx) |
+| [Census 2011 Table A-02](https://censusindia.gov.in/nada/index.php/catalog/43333) (ORGI) | Growth 2001-2011, 1901-2011 series | Catalogue search, xlsx/xls (needs `xlrd` for .xls) |
 | [INDIAN-SHAPEFILES](https://github.com/datta07/INDIAN-SHAPEFILES) (MIT) | States, districts, 2011 sub-districts | Download, pinned commit |
-| [RBI Handbook of Statistics on Indian States](https://www.rbi.org.in/Scripts/AnnualPublications.aspx?head=Handbook+of+Statistics+on+Indian+States) | State GDP, value added by sector, per-capita NSDP | Table links found on the page, xlsx |
+| [RBI Handbook of Statistics on Indian States](https://www.rbi.org.in/Scripts/AnnualPublications.aspx?head=Handbook+of+Statistics+on+Indian+States) | State GDP, value added by sector, per-capita NSDP, unemployment, poverty, life expectancy, infant mortality, SDG score, forest, tourism, power | 16 tables found on the page, xlsx |
 | [GeoNames](https://www.geonames.org/) (CC BY 4.0) | City positions, seats of government | Download |
 | [ESA WorldCover 2021](https://esa-worldcover.org/) | Land cover | Download (needs `rasterio`) |
 | [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) | Elevation | Download |
@@ -62,8 +71,8 @@ has been found, the value is `null` (shown as "–") and listed on the Almanac's
 
 See the Almanac's *Pending data* page for the live list. The main gaps:
 
-- District and city GDP; population after 2011 (the next census has not published results); population growth
-  (2001 census not wired in yet).
+- District and city GDP; population after 2011 (the next census has not published results); growth for cities, for
+  districts carved from split 2011 districts, and for Andhra Pradesh, Telangana and Jammu and Kashmir.
 - City-level jobs, incomes and rents (usaciv's City View and Advisors are off until Indian sources are wired in).
 - Mines and oil and gas fields with coordinates.
 - Five districts with no 2011 census area (Mirpur and Muzaffarabad in Pakistan-administered Kashmir; three new
@@ -72,7 +81,7 @@ See the Almanac's *Pending data* page for the live list. The main gaps:
 ## Running it
 
 ```sh
-uv pip install rasterio numpy            # only for the WorldCover fetch
+uv pip install rasterio numpy xlrd       # only for the WorldCover fetch and the census .xls tables
 uv run python -m pipeline all            # fetch → process → build → check
 uv run python -m pipeline serve          # http://127.0.0.1:8765
 uv run python -m pipeline package        # indiaciv.zip: the static site, ready to upload

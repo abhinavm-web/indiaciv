@@ -21,7 +21,18 @@ TABLES = {
     33: ("gsva_manufacturing", "Gross State Value Added by Economic Activity - Manufacturing (Current Prices)"),
     41: ("gsva_industry", "Gross State Value Added by Economic Activity - Industry (Current Prices)"),
     49: ("gsva_services", "Gross State Value Added by Economic Activity - Services (Current Prices)"),
+    4: ("imr", "State-wise Infant Mortality Rate"),
+    7: ("life_expectancy", "State-wise Life Expectancy"),
+    8: ("unemployment_rural", "State-wise Unemployment Rate: Usual Status (Adjusted) (Rural)"),
+    9: ("unemployment_urban", "State-wise Unemployment Rate: Usual Status (Adjusted) (Urban)"),
+    10: ("mpi", "State-wise Poverty Estimates - Multi-dimensional Poverty Index"),
+    13: ("tourist_visits", "State-wise Domestic Tourist Visits"),
+    99: ("forest_cover", "State-wise Forest Cover"),
+    106: ("sdg_score", "State-wise Sustainable Development Goals (SDGs) Score"),
+    138: ("power_per_capita", "State-wise Per Capita Availability of Power"),
+    140: ("installed_power", "State-wise Installed Capacity of Power"),
 }
+SPLIT = re.compile(r"\((?:rural|urban)\s+(?:male|female|overall|person)s?\)", re.I)
 LINK = re.compile(r"href=PublicationsView\.aspx\?id=\d+>\s*Table\s*(\d+):?\s*([^<]+?)\s*</a></td><td\s+nowrap\s*>"
                   r"<a id='ADOC_[^']+' target='_blank' href='([^']+\.XLSX)'", re.I)
 
@@ -35,6 +46,7 @@ NAME_TO_FIPS = {
     "rajasthan": "08", "sikkim": "11", "tamil nadu": "33", "telangana": "36", "tripura": "16",
     "uttar pradesh": "09", "uttarakhand": "05", "west bengal": "19",
     "dadra & nagar haveli and daman & diu": "26", "lakshadweep": "31",
+    "all india": "IN", "all-india": "IN", "india": "IN",
 }
 
 
@@ -90,37 +102,60 @@ class RbiStates(Source):
         return files[-1]
 
     def process(self):
+        """Every table, whatever its layout, as {fips: {column label: value}}. A column label joins the header rows
+        above the first state row (a period carried across its Male / Female / Total sub-columns), prefixed with the
+        sheet's split ("Rural Overall") where the table has one sheet per split. "IN" is the All-India row."""
         out, used, unmatched = {}, [], set()
         for n, (key, _title) in TABLES.items():
             path = self._file(n)
             used.append(path.name)
             series: dict[str, dict[str, float | None]] = {}
             for sheet in xlsx.sheets(path):
-                years = None
-                for r in xlsx.rows(path, sheet):
-                    cells = [c for c in r]
-                    if years is None:
-                        ys = [c for c in cells if isinstance(c, str) and re.fullmatch(r"\d{4}-\d{2}", c.strip())]
-                        if len(ys) >= 2:
-                            years = {k: c.strip() for k, c in enumerate(cells)
-                                     if isinstance(c, str) and re.fullmatch(r"\d{4}-\d{2}", c.strip())}
-                        continue
-                    name = cells[1] if len(cells) > 1 else None
+                rows = [list(r) for r in xlsx.rows(path, sheet)]
+                split = ""
+                for r in rows[:4]:
+                    for c in r:
+                        if isinstance(c, str) and SPLIT.fullmatch(c.strip()):
+                            split = c.strip()[1:-1].title() + " | "
+                first = next((k for k, r in enumerate(rows) if len(r) > 1 and isinstance(r[1], str)
+                              and NAME_TO_FIPS.get(_norm(r[1])) is not None), None)
+                if first is None:
+                    continue
+                head = [r for r in rows[:first] if any(isinstance(c, (str, float, int)) for c in r[2:])
+                        and not all(isinstance(c, float) and c == int(c) and c < 100 for c in r[2:] if c is not None)]
+                width = max(len(r) for r in rows)
+                labels = {}
+                carried = [None] * len(head)
+                for col in range(2, width):
+                    parts = []
+                    for h, r in enumerate(head):
+                        v = r[col] if col < len(r) else None
+                        if v is not None and str(v).strip():
+                            carried[h] = v
+                            for lower in range(h + 1, len(head)):
+                                carried[lower] = None
+                        cell = carried[h] if v is None and h < len(head) - 1 else v
+                        if cell is not None and str(cell).strip() and not str(cell).startswith(("(", "Base:")):
+                            parts.append(str(int(cell)) if isinstance(cell, float) and cell == int(cell) else str(cell).strip())
+                    if parts:
+                        labels[col] = split + " | ".join(dict.fromkeys(re.sub(r"\s+", " ", p) for p in parts))
+                for r in rows[first:]:
+                    name = r[1] if len(r) > 1 else None
                     if not isinstance(name, str) or not name.strip():
                         continue
                     fips = NAME_TO_FIPS.get(_norm(name))
                     if fips is None:
-                        if not re.match(r"^[-*#@]|^source|^note|^all india|^\(", name.strip().lower()):
+                        if not re.match(r"^[-*#@]|^source|^note|^\(", name.strip().lower()):
                             unmatched.add(name.strip())
                         continue
                     rec = series.setdefault(fips, {})
-                    for k, y in years.items():
-                        if k < len(cells):
-                            rec[y] = _num(cells[k])
+                    for col, lab in labels.items():
+                        if col < len(r):
+                            rec[lab] = _num(r[col])
             out[key] = series
         if unmatched:
-            print(f"    rows not matched to a state: {sorted(unmatched)}")
+            print(f"    rows not matched to a state: {sorted(unmatched)[:12]}")
         years = sorted({y for s in out["gsdp"].values() for y, v in s.items() if v is not None})
-        print(f"    {len(out['gsdp'])} states with GSDP; years {years[0]} to {years[-1]}")
+        print(f"    {len(TABLES)} tables; {len(out['gsdp'])} states with GSDP, years {years[0]} to {years[-1]}")
         return {"vintage": f"RBI Handbook of Statistics on Indian States ({used[0].split('_')[1][:8]})",
                 "_files": used, "unit": "INR lakh", "tables": out}

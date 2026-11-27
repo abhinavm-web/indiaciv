@@ -8,6 +8,7 @@ export const DISTRICT_ICON = {
   transportation: "🚢", utilities: "⚡", information: "📡", finance: "🏦", real_estate: "🏘️", professional: "🔬",
   management: "🏢", admin: "🗂️", education: "🎓", health: "🏥", arts: "🎭", accommodation: "🍽️", other: "🔧",
   public_admin: "🏛️",
+  cultivators: "🌾", agri_labourers: "🧑‍🌾", household_industry: "🧵", other_workers: "🏢",
 };
 
 const panelEl = () => document.getElementById("city-panel");
@@ -21,7 +22,7 @@ export function yieldGrid(nation, yields, ranks = null, rankOf = 0) {
       const label = y.key === "gold" ? "GDP" : y.label;
       return `<div class="yield-tile" title="${esc(y.label)}${y.key === "gold" ? " (GDP)" : ""}: ${esc(y.description || "")}">
         <div class="ico" style="color:${esc(y.color)}">${glyph(y, 20)}</div>
-        <div class="val" style="color:${esc(y.color)}">${yieldValue(y, v)}</div>
+        <div class="val" style="color:${esc(y.color)}">${v == null ? `<span class="pending" title="Pending: no published figure yet (see the Almanac's Pending data page)">Pending</span>` : yieldValue(y, v)}</div>
         <div class="lbl">${esc(label)}</div>
         ${r ? `<div class="rank" title="Rank among the ${rankOf} states and UTs (1 = largest)">#${r} of ${rankOf}</div>` : ""}</div>`;
     })
@@ -36,9 +37,33 @@ export function statRow(ic, fallback, label, v, nv, fmt, higherIsGood) {
     const cls = Math.abs(ratio - 1) < 0.03 || higherIsGood == null ? "" : (higherIsGood ? ratio >= 1 : ratio <= 1) ? "good" : "bad";
     // Within 3% of the U.S. value reads as level: no arrow, no colour (the colour uses the same band).
     const arrow = Math.abs(ratio - 1) < 0.03 ? "≈" : ratio > 1 ? "▲" : "▼";
-    cmp = `<span class="cmp ${cls}">${arrow} US ${fmt(nv)}</span>`;
+    cmp = `<span class="cmp ${cls}">${arrow} India ${fmt(nv)}</span>`;
   }
   return `<div class="stat-row"><span class="sl">${icon(ic, fallback, { size: 14 })}${esc(label)}</span><span><b>${fmt(v)}</b>${cmp}</span></div>`;
+}
+
+// Generic fact rows (pipeline-built: label, value, national, format, higher_is, year, source).
+const FACT_FMT = {
+  pct: (x) => pct(x),
+  int: (x) => (x >= 1e7 ? compact(x) : int(x)),
+  float: (x) => (x == null ? "–" : (+x).toFixed(1)),
+  years: (x) => (x == null ? "–" : `${(+x).toFixed(1)} yrs`),
+  km2: (x) => (x == null ? "–" : `${int(x)} km²`),
+  mw: (x) => (x == null ? "–" : `${int(x)} MW`),
+  inr: (x) => money(x),
+};
+export function factRows(list) {
+  if (!list || !list.length) return "";
+  return list.map((f) => {
+    const fmt = FACT_FMT[f.format] || int;
+    const hi = f.higher_is === "good" ? true : f.higher_is === "bad" ? false : null;
+    const label = `${f.label}${f.year ? ` (${f.year})` : ""}`;
+    return statRow(null, "", label, f.value, f.national, fmt, hi).replace('<div class="stat-row">',
+      `<div class="stat-row" title="${esc(f.source || "")}">`);
+  }).join("");
+}
+export function factSections(o) {
+  return Object.entries(o.facts || {}).filter(([, v]) => v && v.length).map(([title, v]) => ({ title: esc(title), html: factRows(v) }));
 }
 
 export function amenities(o, n) {

@@ -503,6 +503,28 @@ def build() -> None:
                 return min(cands, key=lambda p: (rank_code[p["code"]], -p["pop"])), "largest place in its sub-district"
         return None, None
 
+    # Official capitals (Wikidata P36) are mapped whatever their size: a census town or UA of the same name.
+    cap_names = {norm(c["name"]) for v in (sites.get("capitals") or {}).values() for c in v}
+    cap_names |= {norm(re.sub(r"\s*\(.*\)", "", c["name"])) for v in (sites.get("capitals") or {}).values() for c in v}
+
+    cap_points = [(norm(re.sub(r"\s*\(.*\)", "", c["name"])), *proj(c["lon"], c["lat"]))
+                  for v in (sites.get("capitals") or {}).values() for c in v]
+
+    def near_capital(name, x, y):
+        return any(_near_capital(n, x, y) for n in {name, name.split()[0] if name.split() else name})
+
+    def _near_capital(name, x, y):
+        a = norm(name)
+        return any((a == b or (len(a) >= 6 and edit_distance(a, b) <= 1)) and math.dist((x, y), (cx, cy)) <= 25
+                   for b, cx, cy in cap_points)
+
+    def is_capital_name(name):
+        return any(_is_capital_name(n) for n in {name, name.split()[0] if name.split() else name})
+
+    def _is_capital_name(name):
+        a = norm(name)
+        return bool(a) and any(a == b or (len(a) >= 6 and edit_distance(a, b) <= 1) for b in cap_names)
+
     in_ua = set()
     raw = []
     uas = census["uas"]
@@ -510,7 +532,7 @@ def build() -> None:
         if u["level"] and u["town"]:
             in_ua.add(u["town"])
     for k, u in enumerate(uas):
-        if u["level"] != 0 or (u["TOT_P"] or 0) < MIN_CITY_POP:
+        if u["level"] != 0 or ((u["TOT_P"] or 0) < MIN_CITY_POP and not is_capital_name(clean_city(u["name"]))):
             continue
         parts = []
         for v in uas[k + 1:]:
@@ -526,7 +548,7 @@ def build() -> None:
         name = clean_city(u["name"])
         short = re.sub(r"^(Greater|Bruhat)\s+", "", name)
         names = [short, name] + ([clean_city(main["name"])] if main else [])
-        raw.append({"id": f"UA{u['st']}-{u['ua']}", "name": short, "census_name": u["name"], "kind": "urban agglomeration",
+        raw.append({"small": (u["TOT_P"] or 0) < MIN_CITY_POP, "id": f"UA{u['st']}-{u['ua']}", "name": short, "census_name": u["name"], "kind": "urban agglomeration",
                     "rec": u, "names": names, "allowed": allowed, "sub_keys": sub_keys})
     towns = {}
     for t in census["towns"]:  # a town split across sub-districts comes as several "(Part)" rows: add them up
@@ -538,13 +560,15 @@ def build() -> None:
         for c in census["columns"]:
             agg[c] += t.get(c) or 0
     for t in towns.values():
-        if t["TOT_P"] < MIN_CITY_POP:
+        if t["TOT_P"] < MIN_CITY_POP and not is_capital_name(clean_city(t["name"])):
             continue
         keys = sorted(t["keys"])
         allowed = {gindex[g] for g in (popd["subdistrict_district"].get(k) for k in keys) if g}
         allowed |= set().union(*(went_dt[k[:5]] for k in keys))
-        raw.append({"id": f"T{t['town']}", "name": clean_city(t["name"]), "census_name": t["name"], "kind": "town",
-                    "rec": t, "names": [clean_city(t["name"])], "allowed": allowed or went_st[t["st"]],
+        raw.append({"small": t["TOT_P"] < MIN_CITY_POP, "id": f"T{t['town']}", "name": clean_city(t["name"]), "census_name": t["name"], "kind": "town",
+                    "rec": t, "names": [clean_city(t["name"])] + ([clean_city(t["name"]).split()[0]] if t["TOT_P"] < MIN_CITY_POP
+                                                         and clean_city(t["name"]).split() else []),
+                    "allowed": allowed or went_st[t["st"]],
                     "sub_keys": keys})
 
     raw.sort(key=lambda c: -(c["rec"]["TOT_P"] or 0))
@@ -553,6 +577,8 @@ def build() -> None:
     county_owner = {}
     for c in raw:
         p, how = locate(c)
+        if c["small"] and (p is None or not near_capital(c["name"], *proj(p["lon"], p["lat"]))):
+            continue  # a small town is mapped only as an official capital
         if p is None:
             pending["cities"].append({"name": c["name"], "census_name": c["census_name"],
                                       "population": c["rec"]["TOT_P"],
@@ -563,6 +589,8 @@ def build() -> None:
             c["name"] = p["name"]
         x, y = proj(p["lon"], p["lat"])
         cell = land_cell(grid, owner, x, y)
+        if cell < 0 and c["small"]:  # an island capital (Kavaratti): the nearest hex of land further out
+            cell = land_cell(grid, owner, x, y, max_rings=14)
         if cell < 0:
             pending["cities"].append({"name": c["name"], "census_name": c["census_name"],
                                       "population": c["rec"]["TOT_P"], "why": "no land hex near its point"})
@@ -602,7 +630,7 @@ def build() -> None:
             "counties": [geoids[k]] if k >= 0 else [],
             "footprint": fp, "pop_series": {str(POP_YEAR): rec["TOT_P"]},
             "ranks": {}, "peers": [],
-            "geonames": p["id"], "wikidata": None, "_sub_keys": c["sub_keys"],
+            "geonames": p["id"], "wikidata": None, "_sub_keys": c["sub_keys"], "_small": c["small"],
         })
 
     # Capitals (Wikidata P36): the placed city nearest the capital's coordinates, within CAPITAL_KM.
@@ -625,26 +653,39 @@ def build() -> None:
         for v in capitals.values():
             v.sort(key=lambda c: -c["pop"])
     for iso, caps in sorted(capitals.items()):
-        cap = caps[0]
-        cx, cy = proj(cap["lon"], cap["lat"])
-        pool = cities if iso == "IN" else [c for c in cities if c["states"][0] == states[iso_state[iso]]["abbr"]] \
-            if iso in iso_state else []
-        def same_place(c):  # the capital's point is in the city's own sub-districts, or the names match
-            shapes = [sh for sh in (outline(k) for k in c["_sub_keys"]) if sh]
-            a, b = norm(c["name"]), norm(cap["name"])
-            return any(sh.contains(cx, cy) for sh in shapes) or a in b or b in a or edit_distance(a, b) <= 2
+        if iso != "IN" and iso not in iso_state:
+            continue
+        hit = False
+        for cap in caps:  # several for states with summer / winter or second capitals
+            cx, cy = proj(cap["lon"], cap["lat"])
+            pool = cities if iso == "IN" else [c for c in cities if c["states"][0] == states[iso_state[iso]]["abbr"]]
+            if iso != "IN" and not pool:  # Chandigarh is in the Chandigarh UT, capital of Punjab and Haryana too
+                pool = cities
 
-        pool = [c for c in pool if math.dist((c["x"], c["y"]), (cx, cy)) <= CAPITAL_KM and same_place(c)]
-        best = min(pool, key=lambda c: math.dist((c["x"], c["y"]), (cx, cy)), default=None)
-        if best:
+            def same_place(c, cx=cx, cy=cy, cap=cap):  # capital's point in the city's sub-districts, or same name
+                shapes = [sh for sh in (outline(k) for k in c["_sub_keys"]) if sh]
+                a, b = norm(c["name"]), norm(cap["name"])
+                return any(sh.contains(cx, cy) for sh in shapes) or a in b or b in a or edit_distance(a, b) <= 2
+
+            near = [c for c in (cities if iso != "IN" else pool) if math.dist((c["x"], c["y"]), (cx, cy)) <= CAPITAL_KM
+                    and same_place(c)]
+            best = min(near, key=lambda c: math.dist((c["x"], c["y"]), (cx, cy)), default=None)
+            if not best:
+                continue
+            hit = True
             if iso == "IN":
                 best["capital"] = True
             else:
                 best["province_capital"] = True
-                best.setdefault("capital_of", []).append(states[iso_state[iso]]["abbr"])
-        elif iso in iso_state:
-            no_cap.append(f"{states[iso_state[iso]]['name']} ({cap['name']} is not one of the mapped cities of "
-                          f"100,000+)")
+                if states[iso_state[iso]]["abbr"] not in best.setdefault("capital_of", []):
+                    best["capital_of"].append(states[iso_state[iso]]["abbr"])
+        if not hit and iso in iso_state:
+            no_cap.append(f"{states[iso_state[iso]]['name']} ({' / '.join(c['name'] for c in caps)}: not one of "
+                          f"the mapped cities of 100,000+)")
+    # A small town is on the map only as an official capital.
+    dropped = {c["id"] for c in cities if c["_small"] and not (c["capital"] or c["province_capital"])}
+    cities = [c for c in cities if c["id"] not in dropped]
+    county_owner = {k: cid for k, cid in county_owner.items() if cid not in dropped}
     for st in states:
         if st["iso"] not in capitals:
             no_cap.append(f"{st['name']} (no capital in {cap_source})")
@@ -763,6 +804,7 @@ def build() -> None:
 
     for c in cities:
         c.pop("_sub_keys", None)
+        c.pop("_small", None)
     nation["pending"] = {k: v for k, v in pending.items()}
     write_web("cities.json", cities)
     write_web("states.json", states)
